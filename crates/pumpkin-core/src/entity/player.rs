@@ -5210,6 +5210,52 @@ impl Player {
         }
     }
 
+    /// Drops the entire inventory (main inventory, armor, and off-hand) into the world
+    /// around the player with random velocities, typically called on player death.
+    pub fn drop_inventory(&self) {
+        let world = self.world();
+        let eye_y = self.living_entity.entity.get_eye_height();
+        let item_pos = self.living_entity.entity.pos.load() + Vector3::new(0.0, eye_y - 0.3, 0.0);
+
+        let mut items = Vec::new();
+        {
+            let mut inv = self
+                .inventory
+                .main_inventory
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for slot in inv.iter_mut() {
+                if !slot.is_empty() {
+                    items.push(std::mem::replace(slot, ItemStack::EMPTY.clone()));
+                }
+            }
+        }
+        {
+            let mut eq = self
+                .inventory
+                .entity_equipment
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for stack in eq.equipment.values_mut() {
+                if !stack.is_empty() {
+                    items.push(std::mem::replace(stack, ItemStack::EMPTY.clone()));
+                }
+            }
+        }
+
+        for item_stack in items {
+            let entity = Entity::new(world.clone(), item_pos, &EntityType::ITEM);
+            let pow = rand::random::<f64>() * 0.5;
+            let dir = rand::random::<f64>() * TAU;
+            let velocity = Vector3::new(-dir.sin() * pow, 0.2, dir.cos() * pow);
+
+            let item_entity = Arc::new(ItemEntity::new_with_velocity(
+                entity, item_stack, velocity, 40,
+            ));
+            world.spawn_entity(item_entity);
+        }
+    }
+
     pub fn swap_item(&self) {
         if let Some(server) = self.world().server.upgrade()
             && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)

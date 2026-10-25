@@ -2248,21 +2248,30 @@ impl LivingEntity {
             // Drop loot
             self.drop_loot(&params);
 
-            // Award experience
-            if params.killed_by_player.unwrap_or(false)
-                && world.level_info.load().game_rules.mob_drops
-            {
-                let amount = dyn_self.get_experience_reward(killer);
-                if amount > 0 {
-                    ExperienceOrbEntity::spawn(&world, self.entity.pos.load(), amount);
+            // Award experience and drop inventory/equipment
+            if let Some(player) = dyn_self.get_player() {
+                if !world.level_info.load().game_rules.keep_inventory {
+                    let amount = player.get_experience_reward(killer);
+                    if amount > 0 {
+                        ExperienceOrbEntity::spawn(&world, self.entity.pos.load(), amount);
+                    }
+                    player.drop_inventory();
+                }
+            } else {
+                if params.killed_by_player.unwrap_or(false)
+                    && world.level_info.load().game_rules.mob_drops
+                {
+                    let amount = dyn_self.get_experience_reward(killer);
+                    if amount > 0 {
+                        ExperienceOrbEntity::spawn(&world, self.entity.pos.load(), amount);
+                    }
+                }
+                self.drop_equipment(looting_level);
+                if let Some(mob) = dyn_self.get_mob() {
+                    mob.drop_inventory();
                 }
             }
             self.entity.pose.store(EntityPose::Dying);
-
-            self.drop_equipment(looting_level);
-            if let Some(mob) = dyn_self.get_mob() {
-                mob.drop_inventory();
-            }
 
             // Broadcast death message if it's a player and the gamerule is enabled
             self.broadcast_death_message(&*dyn_self, damage_type, source, cause);

@@ -11,5 +11,21 @@ impl JavaClient {
             .entity
             .on_ground
             .store(ground.on_ground, Ordering::Relaxed);
+
+        if !player
+            .abilities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .flying
+            && player.living_entity.health.load() > 0.0
+            && !player.living_entity.dead.load(Ordering::Relaxed)
+        {
+            player.living_entity.fall(
+                player,
+                0.0,
+                ground.on_ground,
+                player.gamemode.load() == GameMode::Creative,
+            );
+        }
     }
 }

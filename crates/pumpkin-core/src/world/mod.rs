@@ -4246,6 +4246,9 @@ impl World {
             player.inventory.clear();
         }
 
+        player.breath_manager.reset(player);
+        target_world.send_player_equipment(player);
+
         // Set entity position BEFORE loading chunks, so chunks load at the right location
         // This mirrors the initial spawn flow where update_position is called before teleport
         player.get_entity().set_pos(position);
