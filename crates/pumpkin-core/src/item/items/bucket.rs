@@ -16,9 +16,10 @@ use pumpkin_data::{
     item_stack::ItemStack,
     sound::{Sound, SoundCategory},
 };
+use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::{
-    GameMode,
+    GameMode, Hand,
     math::{position::BlockPos, vector3::Vector3},
 };
 use pumpkin_world::{tick::TickPriority, world::BlockFlags};
@@ -245,10 +246,14 @@ fn apply_mob_bucket_components(bucket_stack: &ItemStack, mob: &dyn EntityBase, p
     }
 }
 
-fn give_player_bucket_item(player: &Player, item: &'static Item) {
-    let mut held_stack = player.inventory.held_item();
+fn give_player_bucket_item(player: &Player, item: &'static Item, hand: Hand) {
+    let slot = match hand {
+        Hand::Right => player.inventory.get_selected_slot() as usize,
+        Hand::Left => PlayerInventory::OFF_HAND_SLOT,
+    };
+    let mut held_stack = player.inventory.get_slot(slot);
     fill_bucket_stack(&mut held_stack, player, item);
-    player.inventory.set_held_item(held_stack);
+    player.inventory.set_slot(slot, held_stack);
 }
 
 pub(crate) fn try_pickup_fluid_at(
@@ -345,11 +350,40 @@ fn try_place_powder_snow(world: &Arc<World>, pos: BlockPos, direction: BlockDire
     true
 }
 
+pub(crate) const fn is_water_bucket(item: &Item) -> bool {
+    item.id == Item::WATER_BUCKET.id
+        || item.id == Item::AXOLOTL_BUCKET.id
+        || item.id == Item::COD_BUCKET.id
+        || item.id == Item::SALMON_BUCKET.id
+        || item.id == Item::TROPICAL_FISH_BUCKET.id
+        || item.id == Item::PUFFERFISH_BUCKET.id
+        || item.id == Item::TADPOLE_BUCKET.id
+}
+
+pub(crate) fn can_waterlog(block: &Block, state_id: pumpkin_data::BlockStateId) -> bool {
+    if !block.is_waterloggable() || block.is_waterlogged(state_id) {
+        return false;
+    }
+    // Double slabs cannot be waterlogged.
+    if let Some(props) = block.properties(state_id)
+        && props.to_props().iter().any(|p| {
+            matches!(
+                p,
+                pumpkin_data::Property::SlabType(pumpkin_data::block_properties::SlabType::Double)
+            )
+        })
+    {
+        return false;
+    }
+    true
+}
+
 pub(crate) fn try_place_filled_bucket(
     world: &Arc<World>,
     item: &Item,
     pos: BlockPos,
     direction: BlockDirection,
+    sneaking: bool,
 ) -> bool {
     if item.id == Item::SULFUR_CUBE_BUCKET.id {
         return true;
@@ -359,27 +393,32 @@ pub(crate) fn try_place_filled_bucket(
         return try_place_powder_snow(world, pos, direction);
     }
 
-    if item.id == Item::WATER_BUCKET.id && block.is_waterlogged(state.id) {
-        let state_id = block.set_waterlogged(state.id, true).unwrap_or(state.id);
+    if is_water_bucket(item)
+        && !sneaking
+        && can_waterlog(block, state.id)
+        && let Some(state_id) = block.set_waterlogged(state.id, true)
+    {
         world.set_block_state(&pos, state_id, BlockFlags::NOTIFY_ALL);
         world.schedule_fluid_tick(&Fluid::WATER, pos, 5, TickPriority::Normal);
         return true;
     }
 
     let target_pos = pos.offset(direction.to_offset());
-    let (block, state) = world.get_block_and_state(&target_pos);
+    let (target_block, target_state) = world.get_block_and_state(&target_pos);
 
-    if block.is_waterloggable() {
-        if item.id == Item::LAVA_BUCKET.id {
-            return false;
-        }
-        let state_id = block.set_waterlogged(state.id, true).unwrap_or(state.id);
+    if is_water_bucket(item)
+        && can_waterlog(target_block, target_state.id)
+        && let Some(state_id) = target_block.set_waterlogged(target_state.id, true)
+    {
         world.set_block_state(&target_pos, state_id, BlockFlags::NOTIFY_ALL);
         world.schedule_fluid_tick(&Fluid::WATER, target_pos, 5, TickPriority::Normal);
         return true;
     }
 
-    if state.id == Block::AIR.default_state.id || state.is_liquid() {
+    if target_state.id == Block::AIR.default_state.id
+        || target_state.is_liquid()
+        || target_state.replaceable()
+    {
         world.set_block_state(
             &target_pos,
             if item.id == Item::LAVA_BUCKET.id {
@@ -398,10 +437,21 @@ pub(crate) fn try_place_filled_bucket(
 impl ItemBehaviour for EmptyBucketItem {
     fn normal_use(&self, item: &Item, player: &Player) {
         let (yaw, pitch) = player.rotation();
-        self.normal_use_with_rotation(item, player, yaw, pitch);
+        self.normal_use_with_hand(item, player, yaw, pitch, Hand::Right);
     }
 
-    fn normal_use_with_rotation(&self, _block: &Item, player: &Player, yaw: f32, pitch: f32) {
+    fn normal_use_with_rotation(&self, item: &Item, player: &Player, yaw: f32, pitch: f32) {
+        self.normal_use_with_hand(item, player, yaw, pitch, Hand::Right);
+    }
+
+    fn normal_use_with_hand(
+        &self,
+        _item: &Item,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: Hand,
+    ) {
         let world = player.world();
         let (start_pos, end_pos) = get_start_and_end_pos(player, yaw, pitch);
 
@@ -443,7 +493,7 @@ impl ItemBehaviour for EmptyBucketItem {
             &block_pos.to_f64(),
         );
 
-        give_player_bucket_item(player, item);
+        give_player_bucket_item(player, item, hand);
     }
 
     fn use_on_entity(&self, item: &mut ItemStack, player: &Player, entity: Arc<dyn EntityBase>) {
@@ -488,10 +538,14 @@ impl ItemBehaviour for EmptyBucketItem {
 impl ItemBehaviour for FilledBucketItem {
     fn normal_use(&self, item: &Item, player: &Player) {
         let (yaw, pitch) = player.rotation();
-        self.normal_use_with_rotation(item, player, yaw, pitch);
+        self.normal_use_with_hand(item, player, yaw, pitch, Hand::Right);
     }
 
     fn normal_use_with_rotation(&self, item: &Item, player: &Player, yaw: f32, pitch: f32) {
+        self.normal_use_with_hand(item, player, yaw, pitch, Hand::Right);
+    }
+
+    fn normal_use_with_hand(&self, item: &Item, player: &Player, yaw: f32, pitch: f32, hand: Hand) {
         let world = player.world();
         let (start_pos, end_pos) = get_start_and_end_pos(player, yaw, pitch);
         let hit = world.clip(&pumpkin_world::clip::ClipContext::new(
@@ -511,7 +565,8 @@ impl ItemBehaviour for FilledBucketItem {
             play_bucket_evaporation(&world, &player.position());
             return;
         }
-        if !try_place_filled_bucket(&world, item, pos, direction) {
+        let sneaking = player.get_entity().is_sneaking();
+        if !try_place_filled_bucket(&world, item, pos, direction, sneaking) {
             return;
         }
 
@@ -546,13 +601,13 @@ impl ItemBehaviour for FilledBucketItem {
 
         world.play_sound(get_empty_sound(item), sound_category, &place_pos.to_f64());
 
+        let slot = match hand {
+            Hand::Right => player.inventory.get_selected_slot() as usize,
+            Hand::Left => PlayerInventory::OFF_HAND_SLOT,
+        };
+
         if let Some((entity_type, _)) = get_mob_for_bucket(item) {
-            let held = player.inventory.held_item();
-            let bucket_stack = if !held.is_empty() && held.item.id == item.id {
-                held
-            } else {
-                player.inventory.off_hand_item()
-            };
+            let bucket_stack = player.inventory.get_slot(slot);
             let spawn_coord = Vector3::new(
                 f64::from(place_pos.0.x) + 0.5,
                 f64::from(place_pos.0.y),
@@ -577,10 +632,21 @@ impl ItemBehaviour for FilledBucketItem {
         }
 
         if player.gamemode.load() != GameMode::Creative {
-            let item_stack = ItemStack::new(1, &Item::BUCKET);
-            player
-                .inventory
-                .set_slot(player.inventory.get_selected_slot() as usize, item_stack);
+            let mut stack = player.inventory.get_slot(slot);
+            if stack.item_count == 1 {
+                let item_stack = ItemStack::new(1, &Item::BUCKET);
+                player.inventory.set_slot(slot, item_stack);
+            } else if stack.item_count > 1 {
+                stack.decrement(1);
+                player.inventory.set_slot(slot, stack);
+                let mut empty_bucket = ItemStack::new(1, &Item::BUCKET);
+                let added = player.inventory.insert_stack_anywhere(&mut empty_bucket);
+                if !added && !empty_bucket.is_empty() {
+                    player
+                        .world()
+                        .drop_stack(&player.position().to_block_pos(), empty_bucket);
+                }
+            }
         }
     }
 
@@ -636,5 +702,58 @@ impl ItemBehaviour for MilkBucketItem {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_data::block_properties::{SlabType, WhiteWoolSlabLikeProperties};
+
+    #[test]
+    fn check_is_water_bucket() {
+        assert!(is_water_bucket(&Item::WATER_BUCKET));
+        assert!(is_water_bucket(&Item::AXOLOTL_BUCKET));
+        assert!(is_water_bucket(&Item::COD_BUCKET));
+        assert!(is_water_bucket(&Item::SALMON_BUCKET));
+        assert!(is_water_bucket(&Item::TROPICAL_FISH_BUCKET));
+        assert!(is_water_bucket(&Item::PUFFERFISH_BUCKET));
+        assert!(is_water_bucket(&Item::TADPOLE_BUCKET));
+
+        assert!(!is_water_bucket(&Item::LAVA_BUCKET));
+        assert!(!is_water_bucket(&Item::MILK_BUCKET));
+        assert!(!is_water_bucket(&Item::BUCKET));
+    }
+
+    #[test]
+    fn check_can_waterlog_stairs_and_slabs() {
+        // Oak stairs start unwaterlogged and can be waterlogged
+        let stairs = &Block::OAK_STAIRS;
+        let stairs_state = stairs.default_state.id;
+        assert!(can_waterlog(stairs, stairs_state));
+
+        // Once waterlogged, they cannot be waterlogged again
+        let waterlogged_stairs = stairs.set_waterlogged(stairs_state, true).unwrap();
+        assert!(!can_waterlog(stairs, waterlogged_stairs));
+
+        // Oak slab starts unwaterlogged and can be waterlogged
+        let slab = &Block::OAK_SLAB;
+        let slab_state = slab.default_state.id;
+        assert!(can_waterlog(slab, slab_state));
+
+        // Waterlogged slab cannot be waterlogged again
+        let waterlogged_slab = slab.set_waterlogged(slab_state, true).unwrap();
+        assert!(!can_waterlog(slab, waterlogged_slab));
+
+        // Double slab cannot be waterlogged even if waterlogged=false
+        let double_slab_props = WhiteWoolSlabLikeProperties {
+            r#type: SlabType::Double,
+            r#waterlogged: false,
+        };
+        let double_slab_state = double_slab_props.to_state_id(slab);
+        assert!(!can_waterlog(slab, double_slab_state));
+
+        // Stone is not waterloggable
+        assert!(!can_waterlog(&Block::STONE, Block::STONE.default_state.id));
     }
 }

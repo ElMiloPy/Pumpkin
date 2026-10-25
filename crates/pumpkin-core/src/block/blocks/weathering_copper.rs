@@ -761,6 +761,13 @@ impl BlockBehaviour for WeatheringCopperStairBlock {
         StairBlock.on_place(args)
     }
 
+    fn get_state_for_neighbor_update(
+        &self,
+        args: GetStateForNeighborUpdateArgs<'_>,
+    ) -> BlockStateId {
+        StairBlock.get_state_for_neighbor_update(args)
+    }
+
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
         StairBlock.on_neighbor_update(args);
     }
@@ -892,6 +899,13 @@ impl BlockMetadata for WeatheringCopperSlabBlock {
 impl BlockBehaviour for WeatheringCopperSlabBlock {
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         SlabBlock.on_place(args)
+    }
+
+    fn get_state_for_neighbor_update(
+        &self,
+        args: GetStateForNeighborUpdateArgs<'_>,
+    ) -> BlockStateId {
+        SlabBlock.get_state_for_neighbor_update(args)
     }
 
     fn can_update_at(&self, args: CanUpdateAtArgs<'_>) -> bool {

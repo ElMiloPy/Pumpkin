@@ -2,13 +2,18 @@ use crate::entity::EntityBase;
 use pumpkin_data::block_properties::Half;
 use pumpkin_data::block_properties::HorizontalFacing;
 use pumpkin_data::block_properties::StairsShape;
+use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId, Mirror, Rotation, tag};
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::math::position::BlockPos;
+use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
 
-use crate::block::{BlockBehaviour, OnNeighborUpdateArgs, OnPlaceArgs, PathComputationType};
+use crate::block::{
+    BlockBehaviour, GetStateForNeighborUpdateArgs, OnNeighborUpdateArgs, OnPlaceArgs,
+    PathComputationType,
+};
 use crate::world::World;
 
 type StairsProperties = pumpkin_data::block_properties::WhiteWoolStairsLikeProperties;
@@ -20,6 +25,14 @@ impl BlockBehaviour for StairBlock {
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut stair_props = StairsProperties::default(args.block);
         stair_props.waterlogged = args.replacing.water_source();
+        if stair_props.waterlogged {
+            args.world.schedule_fluid_tick(
+                &Fluid::WATER,
+                *args.position,
+                Fluid::WATER.flow_speed as u8,
+                TickPriority::Normal,
+            );
+        }
 
         stair_props.facing = args.player.get_entity().get_horizontal_facing();
         stair_props.half = match args.direction {
@@ -33,6 +46,30 @@ impl BlockBehaviour for StairBlock {
                 _ => Half::Bottom,
             },
         };
+
+        stair_props.shape = compute_stair_shape(
+            args.world,
+            args.position,
+            stair_props.facing,
+            stair_props.half,
+        );
+
+        stair_props.to_state_id(args.block)
+    }
+
+    fn get_state_for_neighbor_update(
+        &self,
+        args: GetStateForNeighborUpdateArgs<'_>,
+    ) -> BlockStateId {
+        let mut stair_props = StairsProperties::from_state_id(args.state_id);
+        if stair_props.waterlogged {
+            args.world.schedule_fluid_tick(
+                &Fluid::WATER,
+                *args.position,
+                Fluid::WATER.flow_speed as u8,
+                TickPriority::Normal,
+            );
+        }
 
         stair_props.shape = compute_stair_shape(
             args.world,

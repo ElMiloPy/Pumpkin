@@ -1,9 +1,12 @@
 use pumpkin_data::block_properties::SlabType;
+use pumpkin_data::fluid::Fluid;
 use pumpkin_data::{BlockDirection, BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block_from_tag;
+use pumpkin_world::tick::TickPriority;
 
 use crate::block::{
-    BlockBehaviour, BlockIsReplacing, CanUpdateAtArgs, OnPlaceArgs, PathComputationType,
+    BlockBehaviour, BlockIsReplacing, CanUpdateAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,
+    PathComputationType,
 };
 
 type SlabProperties = pumpkin_data::block_properties::WhiteWoolSlabLikeProperties;
@@ -22,6 +25,14 @@ impl BlockBehaviour for SlabBlock {
 
         let mut slab_props = SlabProperties::default(args.block);
         slab_props.waterlogged = args.replacing.water_source();
+        if slab_props.waterlogged {
+            args.world.schedule_fluid_tick(
+                &Fluid::WATER,
+                *args.position,
+                Fluid::WATER.flow_speed as u8,
+                TickPriority::Normal,
+            );
+        }
         slab_props.r#type = match args.direction {
             BlockDirection::Up => SlabType::Top,
             BlockDirection::Down => SlabType::Bottom,
@@ -32,6 +43,22 @@ impl BlockBehaviour for SlabBlock {
         };
 
         slab_props.to_state_id(args.block)
+    }
+
+    fn get_state_for_neighbor_update(
+        &self,
+        args: GetStateForNeighborUpdateArgs<'_>,
+    ) -> BlockStateId {
+        let slab_props = SlabProperties::from_state_id(args.state_id);
+        if slab_props.waterlogged {
+            args.world.schedule_fluid_tick(
+                &Fluid::WATER,
+                *args.position,
+                Fluid::WATER.flow_speed as u8,
+                TickPriority::Normal,
+            );
+        }
+        args.state_id
     }
 
     fn can_update_at(&self, args: CanUpdateAtArgs<'_>) -> bool {

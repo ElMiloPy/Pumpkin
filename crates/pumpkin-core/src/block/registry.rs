@@ -657,6 +657,13 @@ impl BlockRegistry {
                 use pumpkin_data::block_properties::WaterLikeProperties;
                 let water_props = WaterLikeProperties::from_state_id(clicked_block_state.id);
                 Some(BlockIsReplacing::Water(water_props.level))
+            } else if clicked_block.is_waterlogged(clicked_block_state.id)
+                || clicked_block == &Block::SEAGRASS
+                || clicked_block == &Block::TALL_SEAGRASS
+                || clicked_block == &Block::KELP
+                || clicked_block == &Block::KELP_PLANT
+            {
+                Some(BlockIsReplacing::Water(0))
             } else {
                 Some(BlockIsReplacing::Other)
             }
@@ -688,6 +695,13 @@ impl BlockRegistry {
                     use pumpkin_data::block_properties::WaterLikeProperties;
                     let water_props = WaterLikeProperties::from_state_id(previous_block_state.id);
                     BlockIsReplacing::Water(water_props.level)
+                } else if previous_block.is_waterlogged(previous_block_state.id)
+                    || previous_block == &Block::SEAGRASS
+                    || previous_block == &Block::TALL_SEAGRASS
+                    || previous_block == &Block::KELP
+                    || previous_block == &Block::KELP_PLANT
+                {
+                    BlockIsReplacing::Water(0)
                 } else {
                     BlockIsReplacing::None
                 }
