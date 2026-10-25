@@ -581,10 +581,6 @@ impl World {
     }
 
     pub async fn shutdown(&self) {
-        let entities = self.entities.load_full();
-        self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
-            .await;
-
         let chunks: Vec<Vector2<i32>> = self
             .block_entities
             .iter()
@@ -593,6 +589,10 @@ impl World {
         for chunk_pos in chunks {
             self.save_block_entities(chunk_pos);
         }
+
+        let entities = self.entities.load_full();
+        self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
+            .await;
 
         // Save portal POI to disk
         let save_result = self
@@ -5124,6 +5124,14 @@ impl World {
         if chunks_set.is_empty() {
             return;
         }
+
+        // Live block entities must be saved before async entity writes or chunk unloads
+        // drop them from memory or remove the chunks from the cache.
+        for chunk_pos in &chunks_set {
+            self.save_block_entities(*chunk_pos);
+            self.block_entities.remove(chunk_pos);
+        }
+
         let mut entities_to_remove = Vec::new();
 
         self.entities.rcu(|current_entities| {
@@ -5159,11 +5167,6 @@ impl World {
             if let Some(mob) = entity.get_mob() {
                 mob.get_mob_entity().finish_removal(mob);
             }
-        }
-
-        for chunk_pos in &chunks_set {
-            self.save_block_entities(*chunk_pos);
-            self.block_entities.remove(chunk_pos);
         }
     }
 
@@ -7096,10 +7099,6 @@ impl World {
     }
 
     pub async fn save(&self) {
-        let entities = self.entities.load_full();
-        self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
-            .await;
-
         let chunks: Vec<Vector2<i32>> = self
             .block_entities
             .iter()
@@ -7108,6 +7107,10 @@ impl World {
         for chunk_pos in chunks {
             self.save_block_entities(chunk_pos);
         }
+
+        let entities = self.entities.load_full();
+        self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
+            .await;
 
         if let Ok(mut portal_poi) = self.portal_poi.try_lock() {
             let _ = portal_poi.save_all();
