@@ -3,6 +3,11 @@ use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use serde_json::Value;
 
 use super::{EntityBase, LootContextParameters, LootEntityTarget, Taggable};
+use crate::entity::{
+    mob::{magma_cube::MagmaCubeEntity, slime::SlimeEntity},
+    passive::sheep::SheepEntity,
+    projectile::fishing_bobber::FishingBobberEntity,
+};
 
 pub(super) fn matches_entity(
     target: LootEntityTarget,
@@ -23,74 +28,9 @@ fn entity_matches(entity: &dyn EntityBase, predicate: &Value) -> bool {
     };
     properties.iter().all(
         |(key, expected)| match key.strip_prefix("minecraft:").unwrap_or(key) {
-            "entity_type" | "type" => {
-                let matches = |name: &str| {
-                    let kind = entity.get_entity().entity_type;
-                    name.strip_prefix('#').map_or_else(
-                        || kind.resource_name == name.strip_prefix("minecraft:").unwrap_or(name),
-                        |tag| kind.is_tagged_with(tag) == Some(true),
-                    )
-                };
-                expected.as_str().map_or_else(
-                    || {
-                        expected.as_array().is_some_and(|names| {
-                            names.iter().any(|name| name.as_str().is_some_and(matches))
-                        })
-                    },
-                    matches,
-                )
-            }
-            "components" => expected.as_object().is_some_and(|components| {
-                components.iter().all(|(key, expected)| {
-                    let Some(component) = DataComponent::try_from_name(key) else {
-                        return false;
-                    };
-                    let Some(actual) = entity.get_component(component) else {
-                        return false;
-                    };
-                    let Some(tag) = json_to_nbt(expected) else {
-                        return false;
-                    };
-                    read_data(component, &tag)
-                        .is_some_and(|expected| actual.equal(expected.as_ref()))
-                })
-            }),
-            "flags" => {
-                expected.as_object().is_some_and(|flags| {
-                    flags.iter().all(|(flag, expected)| {
-                        let expected_bool = expected.as_bool();
-                        match flag.strip_prefix("minecraft:").unwrap_or(flag) {
-                            "is_on_fire" => expected_bool
-                                .is_none_or(|exp| entity.get_entity().is_on_fire() == exp),
-                            "is_sneaking" => expected_bool.is_none_or(|exp| {
-                                entity
-                                    .get_entity()
-                                    .sneaking
-                                    .load(std::sync::atomic::Ordering::Relaxed)
-                                    == exp
-                            }),
-                            "is_sprinting" => expected_bool.is_none_or(|exp| {
-                                entity
-                                    .get_entity()
-                                    .sprinting
-                                    .load(std::sync::atomic::Ordering::Relaxed)
-                                    == exp
-                            }),
-                            "is_swimming" => expected_bool
-                                .is_none_or(|exp| entity.get_entity().is_swimming() == exp),
-                            "is_baby" => expected_bool.is_none_or(|exp| {
-                                (entity
-                                    .get_entity()
-                                    .age
-                                    .load(std::sync::atomic::Ordering::Relaxed)
-                                    < 0)
-                                    == exp
-                            }),
-                            _ => false,
-                        }
-                    })
-                })
-            }
+            "entity_type" | "type" => match_entity_type(entity, expected),
+            "components" => match_entity_components(entity, expected),
+            "flags" => match_entity_flags(entity, expected),
             "vehicle" => {
                 let vehicle = entity.get_entity().get_vehicle();
                 vehicle
@@ -108,10 +48,174 @@ fn entity_matches(entity: &dyn EntityBase, predicate: &Value) -> bool {
                     .as_ref()
                     .is_some_and(|p| entity_matches(p.as_ref(), expected))
             }
+            "type_specific/sheep" => match_sheep_predicate(entity, expected),
+            "type_specific/cube_mob" => match_cube_mob_predicate(entity, expected),
+            "type_specific/raider" => match_raider_predicate(entity, expected),
+            "type_specific/fishing_hook" => match_fishing_hook_predicate(entity, expected),
+            "type_specific" => {
+                let Some(props) = expected.as_object() else {
+                    return false;
+                };
+                let Some(sub_type) = props.get("type").and_then(|t| t.as_str()) else {
+                    return false;
+                };
+                match sub_type.strip_prefix("minecraft:").unwrap_or(sub_type) {
+                    "sheep" => match_sheep_predicate(entity, expected),
+                    "cube_mob" => match_cube_mob_predicate(entity, expected),
+                    "raider" => match_raider_predicate(entity, expected),
+                    "fishing_hook" => match_fishing_hook_predicate(entity, expected),
+                    _ => false,
+                }
+            }
             // Other entity subpredicates are not implemented yet.
             _ => false,
         },
     )
+}
+
+fn match_entity_type(entity: &dyn EntityBase, expected: &Value) -> bool {
+    let matches = |name: &str| {
+        let kind = entity.get_entity().entity_type;
+        name.strip_prefix('#').map_or_else(
+            || kind.resource_name == name.strip_prefix("minecraft:").unwrap_or(name),
+            |tag| kind.is_tagged_with(tag) == Some(true),
+        )
+    };
+    expected.as_str().map_or_else(
+        || {
+            expected
+                .as_array()
+                .is_some_and(|names| names.iter().any(|name| name.as_str().is_some_and(matches)))
+        },
+        matches,
+    )
+}
+
+fn match_entity_components(entity: &dyn EntityBase, expected: &Value) -> bool {
+    expected.as_object().is_some_and(|components| {
+        components.iter().all(|(key, expected)| {
+            let Some(component) = DataComponent::try_from_name(key) else {
+                return false;
+            };
+            let Some(actual) = entity.get_component(component) else {
+                return false;
+            };
+            let Some(tag) = json_to_nbt(expected) else {
+                return false;
+            };
+            read_data(component, &tag).is_some_and(|expected| actual.equal(expected.as_ref()))
+        })
+    })
+}
+
+fn match_entity_flags(entity: &dyn EntityBase, expected: &Value) -> bool {
+    expected.as_object().is_some_and(|flags| {
+        flags.iter().all(|(flag, expected)| {
+            let expected_bool = expected.as_bool();
+            match flag.strip_prefix("minecraft:").unwrap_or(flag) {
+                "is_on_fire" => {
+                    expected_bool.is_none_or(|exp| entity.get_entity().is_on_fire() == exp)
+                }
+                "is_sneaking" => expected_bool.is_none_or(|exp| {
+                    entity
+                        .get_entity()
+                        .sneaking
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        == exp
+                }),
+                "is_sprinting" => expected_bool.is_none_or(|exp| {
+                    entity
+                        .get_entity()
+                        .sprinting
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        == exp
+                }),
+                "is_swimming" => {
+                    expected_bool.is_none_or(|exp| entity.get_entity().is_swimming() == exp)
+                }
+                "is_baby" => expected_bool.is_none_or(|exp| {
+                    (entity
+                        .get_entity()
+                        .age
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        < 0)
+                        == exp
+                }),
+                _ => false,
+            }
+        })
+    })
+}
+
+fn match_sheep_predicate(entity: &dyn EntityBase, expected: &Value) -> bool {
+    let Some(sheep) = entity.cast_any().downcast_ref::<SheepEntity>() else {
+        return false;
+    };
+    let Some(props) = expected.as_object() else {
+        return false;
+    };
+    props.iter().all(|(key, expected)| match key.as_str() {
+        "sheared" => expected
+            .as_bool()
+            .is_some_and(|exp| sheep.is_sheared() == exp),
+        "type" => true,
+        _ => false,
+    })
+}
+
+fn match_cube_mob_predicate(entity: &dyn EntityBase, expected: &Value) -> bool {
+    let size = if let Some(slime) = entity.cast_any().downcast_ref::<SlimeEntity>() {
+        slime.get_size()
+    } else if let Some(magma) = entity.cast_any().downcast_ref::<MagmaCubeEntity>() {
+        magma.slime.get_size()
+    } else {
+        return false;
+    };
+    let Some(props) = expected.as_object() else {
+        return false;
+    };
+    props.iter().all(|(key, expected)| match key.as_str() {
+        "size" => integer_matches(size, expected),
+        "type" => true,
+        _ => false,
+    })
+}
+
+fn match_raider_predicate(entity: &dyn EntityBase, expected: &Value) -> bool {
+    let Some(raider) = entity.get_mob().and_then(|m| m.as_raider()) else {
+        return false;
+    };
+    let Some(props) = expected.as_object() else {
+        return false;
+    };
+    props.iter().all(|(key, expected)| match key.as_str() {
+        "has_raid" => expected
+            .as_bool()
+            .is_some_and(|exp| raider.has_active_raid() == exp),
+        "is_captain" => expected
+            .as_bool()
+            .is_some_and(|exp| raider.is_patrol_leader() == exp),
+        "type" => true,
+        _ => false,
+    })
+}
+
+fn match_fishing_hook_predicate(entity: &dyn EntityBase, expected: &Value) -> bool {
+    if entity
+        .cast_any()
+        .downcast_ref::<FishingBobberEntity>()
+        .is_none()
+    {
+        return false;
+    }
+    let Some(props) = expected.as_object() else {
+        return false;
+    };
+    props.iter().all(|(key, expected)| match key.as_str() {
+        "in_open_water" => expected.as_bool().is_some_and(|exp| exp),
+        "type" => true,
+        _ => false,
+    })
 }
 
 fn json_to_nbt(value: &Value) -> Option<NbtTag> {
