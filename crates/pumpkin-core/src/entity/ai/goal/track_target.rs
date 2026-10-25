@@ -127,7 +127,7 @@ impl Goal for TrackTargetGoal {
             return false;
         };
 
-        if !mob.can_attack(target_base.as_ref()) {
+        if !target.is_alive() || !mob.can_attack(target_base.as_ref()) {
             return false;
         }
 

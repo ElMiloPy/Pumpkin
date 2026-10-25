@@ -6444,6 +6444,7 @@ impl Player {
         !self.is_creative()
             && !self.is_spectator()
             && self.world().level_info.load().difficulty != Difficulty::Peaceful
+            && self.living_entity.is_alive()
     }
 
     /// Swing the hand of the player
