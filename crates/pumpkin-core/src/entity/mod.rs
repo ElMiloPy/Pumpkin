@@ -619,6 +619,12 @@ pub trait EntityBase: Send + Sync + std::any::Any {
                 client.try_enqueue_packet(meta_data);
             }
         }
+        if let Some(living) = self.get_living_entity() {
+            let attr_packet = crate::entity::attributes::create_update_attributes_packet(living);
+            if let Ok(attr_data) = client.serialize_packet(&attr_packet) {
+                client.try_enqueue_packet(attr_data);
+            }
+        }
     }
 
     fn damage_with_context(

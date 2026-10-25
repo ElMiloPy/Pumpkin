@@ -4,11 +4,13 @@ use std::sync::{
 };
 
 use crossbeam::atomic::AtomicCell;
+use pumpkin_data::attributes::Attributes;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
+use rand::RngExt;
 use uuid::Uuid;
 
 use crate::entity::{
@@ -40,6 +42,12 @@ pub struct SkeletonHorseEntity {
 impl SkeletonHorseEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        let mut rng = rand::rng();
+        let jump_strength = 0.4 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2;
+        mob_entity.living_entity.set_attribute_base(&Attributes::JUMP_STRENGTH, jump_strength);
+        mob_entity.living_entity.set_attribute_base(&Attributes::MAX_HEALTH, 15.0);
+        mob_entity.living_entity.health.store(15.0);
+
         let horse = Self {
             mob_entity,
             ageable_data: AgeableData::default(),
@@ -132,6 +140,24 @@ impl Mob for SkeletonHorseEntity {
         if let Some(owner) = self.owner.load() {
             nbt.put_uuid("Owner", owner);
         }
+
+        let living = &self.mob_entity.living_entity;
+        nbt.put_float("Health", living.health.load());
+        let mut attr_list = Vec::new();
+        let max_health = living.get_max_health();
+        let jump = living.get_attribute_base(&Attributes::JUMP_STRENGTH);
+
+        let mut h_comp = NbtCompound::new();
+        h_comp.put_string("id", "minecraft:max_health".to_string());
+        h_comp.put_double("base", f64::from(max_health));
+        attr_list.push(pumpkin_nbt::tag::NbtTag::Compound(h_comp));
+
+        let mut j_comp = NbtCompound::new();
+        j_comp.put_string("id", "minecraft:jump_strength".to_string());
+        j_comp.put_double("base", jump);
+        attr_list.push(pumpkin_nbt::tag::NbtTag::Compound(j_comp));
+
+        nbt.put("attributes", pumpkin_nbt::tag::NbtTag::List(attr_list));
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
@@ -144,6 +170,32 @@ impl Mob for SkeletonHorseEntity {
         }
         if let Some(owner) = nbt.get_uuid("Owner") {
             self.owner.store(Some(owner));
+        }
+
+        let living = &self.mob_entity.living_entity;
+        if let Some(attrs) = nbt.get_list("attributes").or_else(|| nbt.get_list("Attributes")) {
+            for tag in attrs {
+                if let pumpkin_nbt::tag::NbtTag::Compound(comp) = tag {
+                    let id = comp
+                        .get_string("id")
+                        .or_else(|| comp.get_string("Name"))
+                        .unwrap_or_default();
+                    let base = comp
+                        .get_double("base")
+                        .or_else(|| comp.get_double("Base"))
+                        .unwrap_or(0.0);
+                    if base > 0.0 {
+                        if id == "minecraft:max_health" || id == "generic.max_health" {
+                            living.set_attribute_base(&Attributes::MAX_HEALTH, base);
+                        } else if id == "minecraft:jump_strength" || id == "horse.jump_strength" {
+                            living.set_attribute_base(&Attributes::JUMP_STRENGTH, base);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(health) = nbt.get_float("Health") {
+            living.health.store(health);
         }
     }
 

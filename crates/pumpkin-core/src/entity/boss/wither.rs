@@ -394,6 +394,11 @@ impl WitherEntity {
             if !self.dropped_loot.swap(true, Ordering::SeqCst) {
                 let pos = entity.block_pos.load();
                 world.drop_stack(&pos, ItemStack::new(1, &Item::NETHER_STAR));
+                crate::entity::experience_orb::ExperienceOrbEntity::spawn(
+                    &world,
+                    entity.pos.load(),
+                    50,
+                );
             }
             return false;
         }
@@ -663,9 +668,43 @@ impl Mob for WitherEntity {
             if !self.dropped_loot.swap(true, Ordering::SeqCst) {
                 let pos = entity.get_entity().block_pos.load();
                 world.drop_stack(&pos, ItemStack::new(1, &Item::NETHER_STAR));
+                crate::entity::experience_orb::ExperienceOrbEntity::spawn(
+                    &world,
+                    entity.pos.load(),
+                    50,
+                );
             }
         } else {
             self.update_bossbar(&entity.world.load(), self.bossbar_progress.load());
+        }
+    }
+
+    fn mob_killed_entity(
+        &self,
+        victim: &dyn EntityBase,
+        _params: &crate::world::loot::LootContextParameters<'_>,
+    ) {
+        let entity = self.get_entity();
+        let world = entity.world.load();
+        if world.level_info.load().game_rules.mob_griefing && victim.get_living_entity().is_some() {
+            let v_pos = victim.get_entity().block_pos.load();
+            if world.get_block(&v_pos) == &Block::AIR {
+                let down = world.get_block(&v_pos.down());
+                if down.has_tag(&tag::Block::MINECRAFT_DIRT)
+                    || down == &Block::NETHERRACK
+                    || down == &Block::SOUL_SAND
+                    || down == &Block::SOUL_SOIL
+                    || down == &Block::MUD
+                    || down == &Block::MUDDY_MANGROVE_ROOTS
+                    || down == &Block::FARMLAND
+                {
+                    world.set_block_state(
+                        &v_pos,
+                        Block::WITHER_ROSE.default_state.id,
+                        BlockFlags::NOTIFY_ALL,
+                    );
+                }
+            }
         }
     }
 

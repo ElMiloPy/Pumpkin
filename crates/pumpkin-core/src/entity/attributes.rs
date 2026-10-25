@@ -190,6 +190,41 @@ pub fn send_attribute_updates_for_living(
     world.broadcast_editioned(&je_packet, &be_packet);
 }
 
+#[must_use]
+pub fn create_update_attributes_packet(
+    living: &crate::entity::living::LivingEntity,
+) -> pumpkin_protocol::java::client::play::CUpdateAttributes {
+    use pumpkin_protocol::codec::var_int::VarInt;
+    use pumpkin_protocol::java::client::play::AttributeModifier as JeAttrMod;
+    use pumpkin_protocol::java::client::play::CUpdateAttributes as JePacket;
+    use pumpkin_protocol::java::client::play::Property as JeProperty;
+
+    let attributes = living
+        .attributes
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut je_properties: Vec<JeProperty> = Vec::with_capacity(attributes.len());
+
+    for (&attr_id, inst) in attributes.iter() {
+        let base_value = inst.base_value;
+        let mut modifiers = Vec::new();
+        for mod_inst in &inst.modifiers {
+            modifiers.push(JeAttrMod::new(
+                mod_inst.id.clone(),
+                mod_inst.amount,
+                mod_inst.operation as i8,
+            ));
+        }
+        je_properties.push(JeProperty::new(
+            VarInt(i32::from(attr_id)),
+            base_value,
+            modifiers,
+        ));
+    }
+
+    JePacket::new(living.entity.entity_id.into(), je_properties)
+}
+
 impl Clone for AttributeInstance {
     fn clone(&self) -> Self {
         Self {

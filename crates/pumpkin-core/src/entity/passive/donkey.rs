@@ -4,12 +4,14 @@ use std::sync::{
 };
 
 use crossbeam::atomic::AtomicCell;
+use pumpkin_data::attributes::Attributes;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
+use rand::RngExt;
 use uuid::Uuid;
 
 use crate::entity::{
@@ -50,6 +52,13 @@ pub struct DonkeyEntity {
 impl DonkeyEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
+        let mut rng = rand::rng();
+        let max_health = 15.0 + rng.random_range(0..8) as f32 + rng.random_range(0..9) as f32;
+        mob_entity.living_entity.set_attribute_base(&Attributes::MAX_HEALTH, f64::from(max_health));
+        mob_entity.living_entity.health.store(max_health);
+        mob_entity.living_entity.set_attribute_base(&Attributes::JUMP_STRENGTH, 0.5);
+        mob_entity.living_entity.set_attribute_base(&Attributes::MOVEMENT_SPEED, 0.175);
+
         let donkey = Self {
             mob_entity,
             ageable_data: AgeableData::default(),
@@ -165,6 +174,18 @@ impl Mob for DonkeyEntity {
         if let Some(owner) = self.owner.load() {
             nbt.put_uuid("Owner", owner);
         }
+
+        let living = &self.mob_entity.living_entity;
+        nbt.put_float("Health", living.health.load());
+        let mut attr_list = Vec::new();
+        let max_health = living.get_max_health();
+
+        let mut h_comp = NbtCompound::new();
+        h_comp.put_string("id", "minecraft:max_health".to_string());
+        h_comp.put_double("base", f64::from(max_health));
+        attr_list.push(pumpkin_nbt::tag::NbtTag::Compound(h_comp));
+
+        nbt.put("attributes", pumpkin_nbt::tag::NbtTag::List(attr_list));
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
@@ -180,6 +201,28 @@ impl Mob for DonkeyEntity {
         }
         if let Some(owner) = nbt.get_uuid("Owner") {
             self.owner.store(Some(owner));
+        }
+
+        let living = &self.mob_entity.living_entity;
+        if let Some(attrs) = nbt.get_list("attributes").or_else(|| nbt.get_list("Attributes")) {
+            for tag in attrs {
+                if let pumpkin_nbt::tag::NbtTag::Compound(comp) = tag {
+                    let id = comp
+                        .get_string("id")
+                        .or_else(|| comp.get_string("Name"))
+                        .unwrap_or_default();
+                    let base = comp
+                        .get_double("base")
+                        .or_else(|| comp.get_double("Base"))
+                        .unwrap_or(0.0);
+                    if base > 0.0 && (id == "minecraft:max_health" || id == "generic.max_health") {
+                        living.set_attribute_base(&Attributes::MAX_HEALTH, base);
+                    }
+                }
+            }
+        }
+        if let Some(health) = nbt.get_float("Health") {
+            living.health.store(health);
         }
     }
 

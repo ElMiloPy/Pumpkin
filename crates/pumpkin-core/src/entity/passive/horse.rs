@@ -4,6 +4,7 @@ use std::sync::{
 };
 
 use crossbeam::atomic::AtomicCell;
+use pumpkin_data::attributes::Attributes;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
@@ -56,6 +57,19 @@ impl HorseEntity {
         let color = rng.random_range(0..7);
         let style = rng.random_range(0..5);
         let variant = color | (style << 8);
+
+        // Vanilla AbstractHorse / Horse randomizeAttributes:
+        // generateMaxHealth: 15.0 + nextInt(8) + nextInt(9) (15..=30)
+        // generateJumpStrength: 0.4 + rand*0.2 + rand*0.2 + rand*0.2 (0.4..=1.0)
+        // generateSpeed: (0.45 + rand*0.3 + rand*0.3 + rand*0.3) * 0.25 (0.1125..=0.3375)
+        let max_health = 15.0 + rng.random_range(0..8) as f32 + rng.random_range(0..9) as f32;
+        let jump_strength = 0.4 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2;
+        let speed = (0.45 + rng.random::<f64>() * 0.3 + rng.random::<f64>() * 0.3 + rng.random::<f64>() * 0.3) * 0.25;
+
+        mob_entity.living_entity.set_attribute_base(&Attributes::MAX_HEALTH, f64::from(max_health));
+        mob_entity.living_entity.health.store(max_health);
+        mob_entity.living_entity.set_attribute_base(&Attributes::JUMP_STRENGTH, jump_strength);
+        mob_entity.living_entity.set_attribute_base(&Attributes::MOVEMENT_SPEED, speed);
 
         let horse = Self {
             mob_entity,
@@ -156,6 +170,74 @@ impl Animal for HorseEntity {
             || item_stack.item == &Item::GOLDEN_APPLE
             || item_stack.item == &Item::ENCHANTED_GOLDEN_APPLE
     }
+
+    fn get_breed_offspring(&self, partner: &dyn EntityBase) -> Arc<dyn EntityBase> {
+        let entity = self.get_entity();
+        let world = entity.world.load();
+        let child = Self::new(Entity::new(
+            world.clone(),
+            entity.pos.load(),
+            entity.entity_type,
+        ));
+
+        // Vanilla horse offspring genetics:
+        let mut rng = rand::rng();
+        let p1_living = &self.mob_entity.living_entity;
+        let p2_living = partner.get_living_entity();
+
+        // Attribute blending: (parent1 + parent2 + random_roll) / 3.0
+        let blend_attr = |attr: &Attributes, min: f64, max: f64, rand_val: f64| -> f64 {
+            let v1 = p1_living.get_attribute_base(attr);
+            let v2 = p2_living.map_or(v1, |p2| p2.get_attribute_base(attr));
+            let v3 = min + rand_val * (max - min);
+            (v1 + v2 + v3) / 3.0
+        };
+
+        let child_health = blend_attr(
+            &Attributes::MAX_HEALTH,
+            15.0,
+            30.0,
+            f64::from(rng.random_range(0..16)) / 15.0,
+        ) as f32;
+        let child_jump = blend_attr(
+            &Attributes::JUMP_STRENGTH,
+            0.4,
+            1.0,
+            rng.random::<f64>(),
+        );
+        let child_speed = blend_attr(
+            &Attributes::MOVEMENT_SPEED,
+            0.1125,
+            0.3375,
+            rng.random::<f64>(),
+        );
+
+        let child_living = &child.mob_entity.living_entity;
+        child_living.set_attribute_base(&Attributes::MAX_HEALTH, f64::from(child_health));
+        child_living.health.store(child_health);
+        child_living.set_attribute_base(&Attributes::JUMP_STRENGTH, child_jump);
+        child_living.set_attribute_base(&Attributes::MOVEMENT_SPEED, child_speed);
+
+        // Variant inheritance per vanilla:
+        let p1_var = self.get_variant();
+        let p2_var = partner
+            .cast_any()
+            .downcast_ref::<Self>()
+            .map_or(p1_var, Self::get_variant);
+        let child_color = match rng.random_range(0..9) {
+            0..4 => p1_var & 0xFF,
+            4..8 => p2_var & 0xFF,
+            _ => rng.random_range(0..7),
+        };
+        let child_style = match rng.random_range(0..9) {
+            0..4 => (p1_var >> 8) & 0xFF,
+            4..8 => (p2_var >> 8) & 0xFF,
+            _ => rng.random_range(0..5),
+        };
+        child.set_variant(child_color | (child_style << 8));
+
+        child
+    }
 }
 
 impl Mob for HorseEntity {
@@ -175,6 +257,30 @@ impl Mob for HorseEntity {
         if let Some(owner) = self.owner.load() {
             nbt.put_uuid("Owner", owner);
         }
+
+        let living = &self.mob_entity.living_entity;
+        nbt.put_float("Health", living.health.load());
+        let mut attr_list = Vec::new();
+        let max_health = living.get_max_health();
+        let jump = living.get_attribute_base(&Attributes::JUMP_STRENGTH);
+        let speed = living.get_attribute_base(&Attributes::MOVEMENT_SPEED);
+
+        let mut h_comp = NbtCompound::new();
+        h_comp.put_string("id", "minecraft:max_health".to_string());
+        h_comp.put_double("base", f64::from(max_health));
+        attr_list.push(pumpkin_nbt::tag::NbtTag::Compound(h_comp));
+
+        let mut j_comp = NbtCompound::new();
+        j_comp.put_string("id", "minecraft:jump_strength".to_string());
+        j_comp.put_double("base", jump);
+        attr_list.push(pumpkin_nbt::tag::NbtTag::Compound(j_comp));
+
+        let mut s_comp = NbtCompound::new();
+        s_comp.put_string("id", "minecraft:movement_speed".to_string());
+        s_comp.put_double("base", speed);
+        attr_list.push(pumpkin_nbt::tag::NbtTag::Compound(s_comp));
+
+        nbt.put("attributes", pumpkin_nbt::tag::NbtTag::List(attr_list));
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
@@ -190,6 +296,36 @@ impl Mob for HorseEntity {
         }
         if let Some(owner) = nbt.get_uuid("Owner") {
             self.owner.store(Some(owner));
+        }
+
+        let living = &self.mob_entity.living_entity;
+        if let Some(attrs) = nbt.get_list("attributes").or_else(|| nbt.get_list("Attributes")) {
+            for tag in attrs {
+                if let pumpkin_nbt::tag::NbtTag::Compound(comp) = tag {
+                    let id = comp
+                        .get_string("id")
+                        .or_else(|| comp.get_string("Name"))
+                        .unwrap_or_default();
+                    let base = comp
+                        .get_double("base")
+                        .or_else(|| comp.get_double("Base"))
+                        .unwrap_or(0.0);
+                    if base > 0.0 {
+                        if id == "minecraft:max_health" || id == "generic.max_health" {
+                            living.set_attribute_base(&Attributes::MAX_HEALTH, base);
+                        } else if id == "minecraft:jump_strength" || id == "horse.jump_strength" {
+                            living.set_attribute_base(&Attributes::JUMP_STRENGTH, base);
+                        } else if id == "minecraft:movement_speed"
+                            || id == "generic.movement_speed"
+                        {
+                            living.set_attribute_base(&Attributes::MOVEMENT_SPEED, base);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(health) = nbt.get_float("Health") {
+            living.health.store(health);
         }
     }
 
