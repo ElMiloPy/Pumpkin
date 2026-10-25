@@ -134,6 +134,10 @@ impl EntityBase for CushionEntity {
 
     fn tick(&self, _caller: &dyn EntityBase, _server: &Server) {}
 
+    fn get_pick_result(&self) -> Option<ItemStack> {
+        Some(ItemStack::new(1, Self::item_for_color(self.color())))
+    }
+
     fn can_hit(&self) -> bool {
         self.entity.is_alive()
     }

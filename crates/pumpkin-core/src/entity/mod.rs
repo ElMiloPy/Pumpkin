@@ -252,6 +252,63 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         None
     }
 
+    fn get_pick_result(&self) -> Option<ItemStack> {
+        use pumpkin_data::item::Item;
+
+        let entity_type = self.get_entity().entity_type;
+        let item = match entity_type.id {
+            id if id == EntityType::ACACIA_BOAT.id => Some(&Item::ACACIA_BOAT),
+            id if id == EntityType::ACACIA_CHEST_BOAT.id => Some(&Item::ACACIA_CHEST_BOAT),
+            id if id == EntityType::BAMBOO_RAFT.id => Some(&Item::BAMBOO_RAFT),
+            id if id == EntityType::BAMBOO_CHEST_RAFT.id => Some(&Item::BAMBOO_CHEST_RAFT),
+            id if id == EntityType::BIRCH_BOAT.id => Some(&Item::BIRCH_BOAT),
+            id if id == EntityType::BIRCH_CHEST_BOAT.id => Some(&Item::BIRCH_CHEST_BOAT),
+            id if id == EntityType::CHERRY_BOAT.id => Some(&Item::CHERRY_BOAT),
+            id if id == EntityType::CHERRY_CHEST_BOAT.id => Some(&Item::CHERRY_CHEST_BOAT),
+            id if id == EntityType::DARK_OAK_BOAT.id => Some(&Item::DARK_OAK_BOAT),
+            id if id == EntityType::DARK_OAK_CHEST_BOAT.id => Some(&Item::DARK_OAK_CHEST_BOAT),
+            id if id == EntityType::JUNGLE_BOAT.id => Some(&Item::JUNGLE_BOAT),
+            id if id == EntityType::JUNGLE_CHEST_BOAT.id => Some(&Item::JUNGLE_CHEST_BOAT),
+            id if id == EntityType::MANGROVE_BOAT.id => Some(&Item::MANGROVE_BOAT),
+            id if id == EntityType::MANGROVE_CHEST_BOAT.id => Some(&Item::MANGROVE_CHEST_BOAT),
+            id if id == EntityType::OAK_BOAT.id => Some(&Item::OAK_BOAT),
+            id if id == EntityType::OAK_CHEST_BOAT.id => Some(&Item::OAK_CHEST_BOAT),
+            id if id == EntityType::PALE_OAK_BOAT.id => Some(&Item::PALE_OAK_BOAT),
+            id if id == EntityType::PALE_OAK_CHEST_BOAT.id => Some(&Item::PALE_OAK_CHEST_BOAT),
+            id if id == EntityType::POPLAR_BOAT.id => Some(&Item::POPLAR_BOAT),
+            id if id == EntityType::POPLAR_CHEST_BOAT.id => Some(&Item::POPLAR_CHEST_BOAT),
+            id if id == EntityType::SPRUCE_BOAT.id => Some(&Item::SPRUCE_BOAT),
+            id if id == EntityType::SPRUCE_CHEST_BOAT.id => Some(&Item::SPRUCE_CHEST_BOAT),
+            id if id == EntityType::MINECART.id || id == EntityType::SPAWNER_MINECART.id => {
+                Some(&Item::MINECART)
+            }
+            id if id == EntityType::CHEST_MINECART.id => Some(&Item::CHEST_MINECART),
+            id if id == EntityType::FURNACE_MINECART.id => Some(&Item::FURNACE_MINECART),
+            id if id == EntityType::TNT_MINECART.id => Some(&Item::TNT_MINECART),
+            id if id == EntityType::HOPPER_MINECART.id => Some(&Item::HOPPER_MINECART),
+            id if id == EntityType::COMMAND_BLOCK_MINECART.id => {
+                Some(&Item::COMMAND_BLOCK_MINECART)
+            }
+            id if id == EntityType::ARMOR_STAND.id => Some(&Item::ARMOR_STAND),
+            id if id == EntityType::PAINTING.id => Some(&Item::PAINTING),
+            id if id == EntityType::LEASH_KNOT.id => Some(&Item::LEAD),
+            id if id == EntityType::END_CRYSTAL.id => Some(&Item::END_CRYSTAL),
+            id if id == EntityType::ITEM_FRAME.id => Some(&Item::ITEM_FRAME),
+            id if id == EntityType::GLOW_ITEM_FRAME.id => Some(&Item::GLOW_ITEM_FRAME),
+            _ => {
+                for &egg_id in &pumpkin_data::entity::spawn_egg_ids() {
+                    if let Some(et) = pumpkin_data::entity::entity_from_egg(egg_id)
+                        && et.id == entity_type.id
+                    {
+                        return Item::from_id(egg_id).map(|egg| ItemStack::new(1, egg));
+                    }
+                }
+                None
+            }
+        };
+        item.map(|i| ItemStack::new(1, i))
+    }
+
     fn init_data_tracker(&self) {
         let entity = self.get_entity();
 

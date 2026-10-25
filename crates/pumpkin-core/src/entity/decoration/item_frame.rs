@@ -270,6 +270,11 @@ impl ItemFrameEntity {
 }
 
 impl EntityBase for ItemFrameEntity {
+    fn get_pick_result(&self) -> Option<ItemStack> {
+        let pick = ItemFrameEntity::get_pick_result(self);
+        if pick.is_empty() { None } else { Some(pick) }
+    }
+
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         let item = self
             .item_stack
