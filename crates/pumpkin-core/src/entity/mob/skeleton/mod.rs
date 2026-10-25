@@ -14,7 +14,7 @@ use crate::entity::{
         melee_attack::MeleeAttackGoal, revenge::RevengeGoal, swim::SwimGoal,
         wander_around::WanderAroundGoal,
     },
-    mob::{Mob, MobEntity, equipment::RegionalDifficulty},
+    mob::{Mob, MobEntity, equipment::RegionalDifficulty, spawn::SpawnGroupData},
 };
 use crate::world::World;
 
@@ -70,6 +70,19 @@ impl SkeletonEntityBase {
 impl Mob for SkeletonEntityBase {
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
+    }
+
+    fn finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        self.mob_entity.finalize_spawn_base();
+        let pos = self.mob_entity.living_entity.entity.pos.load();
+        let difficulty = RegionalDifficulty::at(world, pos);
+        self.populate_default_equipment_slots(world, &difficulty);
+        self.populate_default_equipment_enchantments(&difficulty);
+        group_data
     }
 
     fn populate_default_equipment_slots(

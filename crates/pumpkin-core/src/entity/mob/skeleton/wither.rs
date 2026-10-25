@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
+use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::effect::StatusEffect;
+use pumpkin_data::item::Item;
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::potion::Effect;
 
 use crate::entity::{
     Entity, EntityBase,
-    mob::{Mob, MobEntity, skeleton::SkeletonEntityBase},
+    mob::{Mob, MobEntity, skeleton::SkeletonEntityBase, spawn::SpawnGroupData},
     projectile::arrow::ArrowEntity,
 };
+use crate::world::World;
 
 pub struct WitherSkeletonEntity {
     entity: Arc<SkeletonEntityBase>,
@@ -24,6 +28,24 @@ impl WitherSkeletonEntity {
 impl Mob for WitherSkeletonEntity {
     fn get_mob_entity(&self) -> &MobEntity {
         &self.entity.mob_entity
+    }
+
+    fn finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        let group_data = self.entity.finalize_spawn(world, group_data);
+        let living = &self.entity.mob_entity.living_entity;
+        let mut equipment = living
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        equipment.put(
+            &EquipmentSlot::MAIN_HAND,
+            ItemStack::new(1, &Item::STONE_SWORD),
+        );
+        group_data
     }
 
     fn on_attack(&self, target: &dyn EntityBase) {

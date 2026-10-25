@@ -55,8 +55,61 @@ fn entity_matches(entity: &dyn EntityBase, predicate: &Value) -> bool {
                         .is_some_and(|expected| actual.equal(expected.as_ref()))
                 })
             }),
+            "flags" => {
+                expected.as_object().is_some_and(|flags| {
+                    flags.iter().all(|(flag, expected)| {
+                        let expected_bool = expected.as_bool();
+                        match flag.strip_prefix("minecraft:").unwrap_or(flag) {
+                            "is_on_fire" => expected_bool
+                                .is_none_or(|exp| entity.get_entity().is_on_fire() == exp),
+                            "is_sneaking" => expected_bool.is_none_or(|exp| {
+                                entity
+                                    .get_entity()
+                                    .sneaking
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                                    == exp
+                            }),
+                            "is_sprinting" => expected_bool.is_none_or(|exp| {
+                                entity
+                                    .get_entity()
+                                    .sprinting
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                                    == exp
+                            }),
+                            "is_swimming" => expected_bool
+                                .is_none_or(|exp| entity.get_entity().is_swimming() == exp),
+                            "is_baby" => expected_bool.is_none_or(|exp| {
+                                (entity
+                                    .get_entity()
+                                    .age
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                                    < 0)
+                                    == exp
+                            }),
+                            _ => false,
+                        }
+                    })
+                })
+            }
+            "vehicle" => {
+                let vehicle = entity.get_entity().get_vehicle();
+                vehicle
+                    .as_ref()
+                    .is_some_and(|v| entity_matches(v.as_ref(), expected))
+            }
+            "passenger" => {
+                let passenger = entity
+                    .get_entity()
+                    .passengers
+                    .lock()
+                    .ok()
+                    .and_then(|p| p.first().cloned());
+                passenger
+                    .as_ref()
+                    .is_some_and(|p| entity_matches(p.as_ref(), expected))
+            }
             // Other entity subpredicates are not implemented yet.
-            _ => true,
+            _ => false,
         },
     )
 }

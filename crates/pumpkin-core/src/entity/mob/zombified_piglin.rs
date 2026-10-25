@@ -19,6 +19,7 @@ use crate::entity::{
         Mob, MobEntity,
         equipment::RegionalDifficulty,
         neutral::{NeutralData, NeutralMob},
+        spawn::SpawnGroupData,
     },
 };
 use crate::world::World;
@@ -121,6 +122,19 @@ impl Mob for ZombifiedPiglinEntity {
 
     fn as_neutral(&self) -> Option<&dyn NeutralMob> {
         Some(self)
+    }
+
+    fn finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        self.mob_entity.finalize_spawn_base();
+        let pos = self.mob_entity.living_entity.entity.pos.load();
+        let difficulty = RegionalDifficulty::at(world, pos);
+        self.populate_default_equipment_slots(world, &difficulty);
+        self.populate_default_equipment_enchantments(&difficulty);
+        group_data
     }
 
     fn populate_default_equipment_slots(

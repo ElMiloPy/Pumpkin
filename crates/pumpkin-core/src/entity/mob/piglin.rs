@@ -22,6 +22,7 @@ use pumpkin_util::math::position::BlockPos;
 
 use crate::entity::item::ItemEntity;
 use crate::entity::living::LivingEntity;
+use crate::entity::mob::spawn::SpawnGroupData;
 use crate::entity::mob::{MobMetadata, equipment as mob_equipment};
 use crate::entity::player::Player;
 use crate::entity::{
@@ -991,6 +992,19 @@ impl Mob for PiglinEntity {
     fn spawn_as_baby(&self) -> bool {
         self.set_baby(true);
         true
+    }
+
+    fn finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        self.mob_entity.finalize_spawn_base();
+        let pos = self.mob_entity.living_entity.entity.pos.load();
+        let difficulty = mob_equipment::RegionalDifficulty::at(world, pos);
+        self.populate_default_equipment_slots(world, &difficulty);
+        self.populate_default_equipment_enchantments(&difficulty);
+        group_data
     }
 
     fn get_mob_entity(&self) -> &MobEntity {

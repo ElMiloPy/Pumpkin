@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
+use crate::entity::mob::spawn::SpawnGroupData;
 use crate::entity::mob::zombie::ZombieEntityBase;
 use crate::entity::{
     Entity,
     mob::{Mob, MobEntity},
 };
+use crate::world::World;
 use pumpkin_nbt::compound::NbtCompound;
 
 pub struct DrownedEntity {
@@ -49,6 +51,14 @@ impl Mob for DrownedEntity {
 
     fn spawn_as_baby(&self) -> bool {
         self.entity.spawn_as_baby()
+    }
+
+    fn finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        self.entity.finalize_spawn(world, group_data)
     }
 
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {

@@ -550,9 +550,11 @@ pub fn check_spawn_rules(
     }
     if id == EntityType::PARROT.id {
         let below = pos.down();
-        return world
-            .get_block(&below)
-            .has_tag(&pumpkin_data::tag::Block::MINECRAFT_PARROTS_SPAWNABLE_ON)
+        let below_block = world.get_block(&below);
+        return (below_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_PARROTS_SPAWNABLE_ON)
+            || below_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_LEAVES)
+            || below_block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_LOGS)
+            || below_block == &pumpkin_data::Block::GRASS_BLOCK)
             && mob::MobEntity::is_bright_enough_to_spawn(world, pos);
     }
     if id == EntityType::RABBIT.id {

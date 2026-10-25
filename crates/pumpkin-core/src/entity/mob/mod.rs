@@ -654,10 +654,25 @@ impl MobEntity {
     }
 
     pub fn get_target(&self) -> Option<Arc<dyn EntityBase>> {
-        self.target
+        let mut target_guard = self
+            .target
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(target) = target_guard.as_ref() {
+            if !target.is_alive() {
+                *target_guard = None;
+                return None;
+            }
+            if let Some(player) = target.get_player() {
+                if player.is_creative() || player.is_spectator() {
+                    *target_guard = None;
+                    return None;
+                }
+            }
+            Some(target.clone())
+        } else {
+            None
+        }
     }
 
     fn set_mob_flag(&self, flag: u8, value: bool) {
@@ -723,9 +738,9 @@ impl MobEntity {
         }
 
         let current_brightness = if is_thundering {
-            (sky_light - 10).max(block_light)
+            world.get_raw_brightness(pos, 10)
         } else {
-            sky_light.max(block_light)
+            world.get_max_local_raw_brightness(pos)
         };
 
         // TODO
@@ -776,7 +791,7 @@ impl MobEntity {
     }
 
     pub fn is_bright_enough_to_spawn(world: &World, pos: &BlockPos) -> bool {
-        world.get_max_local_raw_brightness(pos) > 8
+        world.get_raw_brightness(pos, 0) > 8
     }
 
     pub fn check_surface_water_animal_spawn_rules(world: &World, pos: &BlockPos) -> bool {

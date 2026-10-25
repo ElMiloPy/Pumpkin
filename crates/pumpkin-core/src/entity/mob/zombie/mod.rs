@@ -1,4 +1,4 @@
-use super::{Mob, MobEntity, MobMetadata};
+use super::{Mob, MobEntity, MobMetadata, spawn::SpawnGroupData};
 use crate::entity::ai::goal::break_door::BreakDoorGoal;
 use crate::entity::ai::goal::destroy_egg::DestroyEggGoal;
 use crate::entity::ai::goal::look_around::RandomLookAroundGoal;
@@ -151,6 +151,19 @@ impl Mob for ZombieEntityBase {
     fn spawn_as_baby(&self) -> bool {
         self.set_baby(true);
         true
+    }
+
+    fn finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        self.mob_entity.finalize_spawn_base();
+        let pos = self.mob_entity.living_entity.entity.pos.load();
+        let difficulty = RegionalDifficulty::at(world, pos);
+        self.populate_default_equipment_slots(world, &difficulty);
+        self.populate_default_equipment_enchantments(&difficulty);
+        group_data
     }
 
     fn populate_default_equipment_slots(

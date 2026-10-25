@@ -611,14 +611,12 @@ pub fn spawn_mobs_for_chunk_generation(
                     let fz =
                         (f64::from(z)).clamp(f64::from(zo) + width, f64::from(zo) + 16.0 - width);
                     let spawn_pos_f64 = Vector3::new(fx, f64::from(pos.0.y), fz);
-                    let check_pos = BlockPos::new(fx.floor() as i32, pos.0.y, fz.floor() as i32);
 
-                    if world.is_space_empty(entity_type.get_spawn_bounding_box(
-                        fx,
-                        f64::from(pos.0.y),
-                        fz,
-                    )) && check_spawn_rules(entity_type, world, &check_pos, false)
-                    {
+                    let down_state =
+                        GenerationCache::get_block_state(cache, &pos.down().0).to_state();
+                    let down_block = Block::from_state_id(down_state.id);
+
+                    if is_valid_animal_chunk_gen_floor(entity_type, down_block) {
                         let entity = from_type(entity_type, spawn_pos_f64, world, Uuid::new_v4());
                         entity
                             .get_entity()
@@ -1100,6 +1098,31 @@ pub fn is_valid_empty_spawn_block(
         return false;
     }
     !is_block_dangerous(entity_type, state)
+}
+
+#[must_use]
+fn is_valid_animal_chunk_gen_floor(entity_type: &'static EntityType, block: &Block) -> bool {
+    let id = entity_type.id;
+    if id == EntityType::ARMADILLO.id {
+        block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_ARMADILLO_SPAWNABLE_ON)
+    } else if id == EntityType::FOX.id {
+        block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_FOXES_SPAWNABLE_ON)
+    } else if id == EntityType::MOOSHROOM.id {
+        block == &Block::MYCELIUM
+    } else if id == EntityType::WOLF.id {
+        block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_WOLVES_SPAWNABLE_ON)
+    } else if id == EntityType::RABBIT.id {
+        block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_RABBITS_SPAWNABLE_ON)
+    } else if id == EntityType::OCELOT.id || id == EntityType::PARROT.id {
+        block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_PARROTS_SPAWNABLE_ON)
+            || block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_LEAVES)
+            || block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_LOGS)
+            || block == &Block::GRASS_BLOCK
+    } else if entity_type.category == &MobCategory::CREATURE {
+        block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_ANIMALS_SPAWNABLE_ON)
+    } else {
+        true
+    }
 }
 
 #[must_use]

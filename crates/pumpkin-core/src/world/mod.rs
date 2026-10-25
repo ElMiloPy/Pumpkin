@@ -4236,6 +4236,7 @@ impl World {
             .await;
 
         player.living_entity.reset_state();
+        player.get_entity().refresh_synced_data();
 
         player.send_permission_lvl_update();
 
@@ -4945,6 +4946,7 @@ impl World {
 
     #[expect(clippy::needless_pass_by_value)]
     pub fn spawn_entity_non_save(&self, entity: Arc<dyn EntityBase>) {
+        entity.init_data_tracker();
         let _base_entity = entity.get_entity();
         self.entity_tracker.add_entity(&entity, self);
         self.spawn_state.load().add_entity(self, entity.as_ref());

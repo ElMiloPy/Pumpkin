@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use crate::entity::{
     Entity,
-    mob::{Mob, MobEntity, equipment::RegionalDifficulty, skeleton::SkeletonEntityBase},
+    mob::{
+        Mob, MobEntity, equipment::RegionalDifficulty, skeleton::SkeletonEntityBase,
+        spawn::SpawnGroupData,
+    },
 };
 use crate::world::World;
 
@@ -21,6 +24,14 @@ impl SkeletonEntity {
 impl Mob for SkeletonEntity {
     fn get_mob_entity(&self) -> &MobEntity {
         &self.entity.mob_entity
+    }
+
+    fn finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        self.entity.finalize_spawn(world, group_data)
     }
 
     fn populate_default_equipment_slots(

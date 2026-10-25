@@ -16,6 +16,7 @@ use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_util::math::position::BlockPos;
 use uuid::Uuid;
 
+use crate::entity::mob::spawn::SpawnGroupData;
 use crate::entity::mob::zombie::ZombieEntityBase;
 use crate::entity::mob::{Mob, MobEntity};
 use crate::entity::passive::villager::VillagerEntity;
@@ -23,6 +24,7 @@ use crate::entity::passive::villager::data::{GossipType, VillagerData};
 use crate::entity::player::Player;
 use crate::entity::player::advancement::trigger::AdvancementTrigger;
 use crate::entity::{Entity, EntityBase};
+use crate::world::World;
 
 /// Blocks that make a zombie villager's cure tick down faster: iron bars and beds.
 fn speeds_up_conversion(block: &Block) -> bool {
@@ -261,6 +263,14 @@ impl Mob for ZombieVillagerEntity {
 
     fn spawn_as_baby(&self) -> bool {
         self.mob_entity.spawn_as_baby()
+    }
+
+    fn finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        self.mob_entity.finalize_spawn(world, group_data)
     }
 
     fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
