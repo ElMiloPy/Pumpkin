@@ -13,6 +13,7 @@ use pumpkin_data::tracked_data;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::codec::var_int::VarInt;
+use pumpkin_util::Hand;
 use pumpkin_util::math::position::BlockPos;
 use uuid::Uuid;
 
@@ -329,6 +330,37 @@ impl ZombieVillagerEntity {
             Ordering::Relaxed,
         );
 
+        // Drop preserved equipment held by the zombie villager.
+        let mut equipment = self
+            .mob_entity
+            .mob_entity
+            .living_entity
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let drop_chances = self
+            .mob_entity
+            .mob_entity
+            .living_entity
+            .equipment_drop_chances
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let entity_pos = entity.block_pos.load();
+        for (slot, stack) in equipment.equipment.drain() {
+            if !stack.is_empty() {
+                let chance = drop_chances
+                    .get(&slot)
+                    .copied()
+                    .unwrap_or(crate::entity::mob::equipment::DEFAULT_EQUIPMENT_DROP_CHANCE);
+                if chance > 1.0 {
+                    world.drop_stack(&entity_pos, stack);
+                }
+            }
+        }
+        drop(equipment);
+        drop(drop_chances);
+
         // Hand the villager back its profession, trades, gossips and trading xp.
         let data = self.get_villager_data();
         let mut nbt = self
@@ -339,6 +371,24 @@ impl ZombieVillagerEntity {
         nbt.put_int("Xp", self.villager_xp.load(Ordering::Relaxed));
         villager.mob_read_nbt(&nbt);
         villager.set_villager_data(data);
+
+        // If the cured villager has a profession but no trade offers (e.g. naturally spawned zombie villager),
+        // generate initial trades up to its current level.
+        let has_offers = !villager
+            .offers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty();
+        let profession = data.profession_enum();
+        if !has_offers
+            && profession != pumpkin_data::villager::VillagerProfession::None
+            && profession != pumpkin_data::villager::VillagerProfession::Nitwit
+        {
+            let max_level = data.level.0.clamp(1, 5);
+            for lvl in 1..=max_level {
+                villager.add_trades(profession, lvl);
+            }
+        }
 
         if let Some(starter) = self.conversion_starter.load() {
             // Vanilla's `ZOMBIE_VILLAGER_CURED` reputation event.
@@ -415,12 +465,23 @@ impl Mob for ZombieVillagerEntity {
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
+        self.mob_interact_with_hand(player, item_stack, Hand::Right)
+            .unwrap_or(false)
+    }
+
+    fn mob_interact_with_hand(
+        &self,
+        player: &Arc<Player>,
+        item_stack: &mut ItemStack,
+        _hand: Hand,
+    ) -> Option<bool> {
         if item_stack.get_item() == &Item::GOLDEN_APPLE {
-            if self
-                .mob_entity
-                .mob_entity
-                .living_entity
-                .has_effect(&StatusEffect::WEAKNESS)
+            if !self.is_converting()
+                && self
+                    .mob_entity
+                    .mob_entity
+                    .living_entity
+                    .has_effect(&StatusEffect::WEAKNESS)
             {
                 item_stack.decrement_unless_creative(player.gamemode.load(), 1);
                 self.start_converting(
@@ -430,9 +491,12 @@ impl Mob for ZombieVillagerEntity {
                     ),
                 );
             }
-            return true;
+            return Some(true);
         }
-        self.mob_entity.mob_interact(player, item_stack)
+        if self.mob_entity.mob_interact(player, item_stack) {
+            return Some(true);
+        }
+        None
     }
 
     fn mob_tick(&self, _caller: &dyn EntityBase) {
@@ -527,7 +591,9 @@ impl Mob for ZombieVillagerEntity {
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, speeds_up_conversion};
+    use super::*;
+    use pumpkin_data::data_component_impl::EquipmentSlot;
+    use pumpkin_util::math::vector3::Vector3;
 
     #[test]
     fn only_iron_bars_and_beds_speed_up_the_cure() {
@@ -537,5 +603,75 @@ mod tests {
         assert!(!speeds_up_conversion(&Block::COPPER_BARS));
         assert!(!speeds_up_conversion(&Block::STONE));
         assert!(!speeds_up_conversion(&Block::RED_WOOL));
+    }
+
+    #[tokio::test]
+    async fn start_converting_state_changes() -> Result<(), Box<dyn std::error::Error>> {
+        let folder = tempfile::tempdir()?;
+        let world = crate::entity::ai::test_support::world(&folder);
+        let zv = ZombieVillagerEntity::new(Entity::new(
+            world,
+            Vector3::new(0.0, 64.0, 0.0),
+            &EntityType::ZOMBIE_VILLAGER,
+        ));
+        assert!(!zv.is_converting());
+
+        zv.mob_entity.mob_entity.living_entity.add_effect(Effect {
+            effect_type: &StatusEffect::WEAKNESS,
+            duration: 1000,
+            amplifier: 0,
+            ambient: false,
+            show_particles: true,
+            show_icon: true,
+            blend: false,
+        });
+        assert!(
+            zv.mob_entity
+                .mob_entity
+                .living_entity
+                .has_effect(&StatusEffect::WEAKNESS)
+        );
+
+        zv.start_converting(None, 4000);
+        assert!(zv.is_converting());
+        assert!(
+            !zv.mob_entity
+                .mob_entity
+                .living_entity
+                .has_effect(&StatusEffect::WEAKNESS)
+        );
+        assert!(
+            zv.mob_entity
+                .mob_entity
+                .living_entity
+                .has_effect(&StatusEffect::STRENGTH)
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finish_conversion_drops_preserved_equipment() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let folder = tempfile::tempdir()?;
+        let world = crate::entity::ai::test_support::world(&folder);
+        let zv = ZombieVillagerEntity::new(Entity::new(
+            world.clone(),
+            Vector3::new(0.0, 64.0, 0.0),
+            &EntityType::ZOMBIE_VILLAGER,
+        ));
+        zv.mob_entity.mob_entity.set_item_slot_and_drop_when_killed(
+            &EquipmentSlot::MAIN_HAND,
+            ItemStack::new(1, &Item::DIAMOND_SWORD),
+        );
+        zv.finish_conversion();
+        let entities = world.entities.load_full();
+        assert!(
+            entities
+                .iter()
+                .any(|e| *e.get_entity().entity_type == EntityType::ITEM),
+            "preserved item was not dropped into the world"
+        );
+        Ok(())
     }
 }
