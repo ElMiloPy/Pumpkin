@@ -231,6 +231,30 @@ impl ArrowEntity {
         damage_succeeded
     }
 
+    pub fn add_effect(&self, effect: pumpkin_data::data_component_impl::StatusEffectInstance) {
+        let mut stack = self
+            .item_stack
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if stack.item != &Item::TIPPED_ARROW {
+            *stack = ItemStack::new(1, &Item::TIPPED_ARROW);
+        }
+        let mut pc = stack
+            .get_data_component::<pumpkin_data::data_component_impl::PotionContentsImpl>()
+            .cloned()
+            .unwrap_or(pumpkin_data::data_component_impl::PotionContentsImpl {
+                potion_id: None,
+                custom_color: None,
+                custom_effects: Vec::new(),
+                custom_name: None,
+            });
+        pc.custom_effects.push(effect);
+        stack.set_data_component(pc);
+        let color = Self::get_effect_color(&stack);
+        self.entity
+            .set_synced_data(pumpkin_data::tracked_data::arrow::ID_EFFECT_COLOR, color);
+    }
+
     #[must_use]
     pub fn get_effect_color(item_stack: &ItemStack) -> i32 {
         if let Some(pc) =

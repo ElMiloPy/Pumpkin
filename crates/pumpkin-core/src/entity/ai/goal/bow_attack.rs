@@ -20,6 +20,7 @@ pub struct BowAttackGoal {
     goal_control: Controls,
     speed: f64,
     attack_interval: i32,
+    hard_attack_interval: i32,
     squared_range: f64,
     attack_time: i32,
     see_time: i32,
@@ -42,6 +43,7 @@ impl BowAttackGoal {
             goal_control: Controls::MOVE | Controls::LOOK,
             speed,
             attack_interval,
+            hard_attack_interval: attack_interval / 2,
             squared_range: f64::from(range * range),
             attack_time: -1,
             see_time: 0,
@@ -51,6 +53,12 @@ impl BowAttackGoal {
             draw_ticks: 0,
             drawing: false,
         }
+    }
+
+    #[must_use]
+    pub const fn with_hard_attack_interval(mut self, interval: i32) -> Self {
+        self.hard_attack_interval = interval;
+        self
     }
 
     fn main_hand_item(mob: &dyn Mob) -> ItemStack {
@@ -64,8 +72,20 @@ impl BowAttackGoal {
             )
     }
 
-    fn is_holding_bow(mob: &dyn Mob) -> bool {
+    fn off_hand_item(mob: &dyn Mob) -> ItemStack {
+        mob.get_mob_entity()
+            .living_entity
+            .entity_equipment
+            .try_lock()
+            .map_or_else(
+                |_| ItemStack::EMPTY.clone(),
+                |eq| eq.get(&EquipmentSlot::OFF_HAND),
+            )
+    }
+
+    pub fn is_holding_bow(mob: &dyn Mob) -> bool {
         Self::main_hand_item(mob).item.id == Item::BOW.id
+            || Self::off_hand_item(mob).item.id == Item::BOW.id
     }
 
     fn stop_drawing(&mut self, mob: &dyn Mob) {
@@ -84,7 +104,11 @@ impl BowAttackGoal {
 
         let arrow_entity = Entity::new(world.clone(), entity.pos.load(), &EntityType::ARROW);
         let projectile = ItemStack::new(1, &Item::ARROW);
-        let bow_item = Self::main_hand_item(mob);
+        let bow_item = if Self::main_hand_item(mob).item.id == Item::BOW.id {
+            Self::main_hand_item(mob)
+        } else {
+            Self::off_hand_item(mob)
+        };
         let arrow = ArrowEntity::new_shot_with_weapon(
             arrow_entity,
             entity,
@@ -132,7 +156,9 @@ impl BowAttackGoal {
             divergence,
         );
 
-        world.play_sound(Sound::EntityArrowShoot, SoundCategory::Hostile, &mob_pos);
+        let shoot_sound = mob.shoot_sound().unwrap_or(Sound::EntitySkeletonShoot);
+        let pitch = 1.0 / (rand::random::<f32>() * 0.4 + 0.8);
+        world.play_sound_fine(shoot_sound, SoundCategory::Hostile, &mob_pos, 1.0, pitch);
 
         let arrow: Arc<dyn EntityBase> = Arc::new(arrow);
         let entity_id = entity.entity_id;
@@ -246,16 +272,26 @@ impl Goal for BowAttackGoal {
                 if self.draw_ticks >= Self::DRAW_TIME {
                     self.stop_drawing(mob);
                     Self::shoot(mob, &target);
-                    self.attack_time = self.attack_interval;
+                    let is_hard = mob.get_entity().world.load().level_info.load().difficulty
+                        == pumpkin_util::Difficulty::Hard;
+                    self.attack_time = if is_hard {
+                        self.hard_attack_interval
+                    } else {
+                        self.attack_interval
+                    };
                 }
             }
         } else {
             self.attack_time -= 1;
             if self.attack_time <= 0 && self.see_time >= -60 {
-                let stack = Self::main_hand_item(mob);
+                let (hand, stack) = if Self::main_hand_item(mob).item.id == Item::BOW.id {
+                    (Hand::Right, Self::main_hand_item(mob))
+                } else {
+                    (Hand::Left, Self::off_hand_item(mob))
+                };
                 mob.get_mob_entity()
                     .living_entity
-                    .set_active_hand(Hand::Right, stack, i32::MAX);
+                    .set_active_hand(hand, stack, i32::MAX);
                 self.drawing = true;
                 self.draw_ticks = 0;
             }

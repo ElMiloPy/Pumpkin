@@ -31,6 +31,14 @@ pub struct SkeletonEntityBase {
 
 impl SkeletonEntityBase {
     pub fn new(entity: Entity) -> Arc<Self> {
+        Self::new_with_intervals(entity, 40, 20)
+    }
+
+    pub fn new_with_intervals(
+        entity: Entity,
+        attack_interval: i32,
+        hard_attack_interval: i32,
+    ) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
         let mob = Self { mob_entity };
         let mob_arc = Arc::new(mob);
@@ -43,28 +51,45 @@ impl SkeletonEntityBase {
             let target_selector = &mob_arc.mob_entity.target_selector;
 
             goal_selector.add_goal(0, Box::new(SwimGoal::default()));
-            goal_selector.add_goal(2, Box::new(BowAttackGoal::new(1.0, 20, 15.0)));
-            goal_selector.add_goal(3, Box::new(MeleeAttackGoal::new(1.2, false)));
+            goal_selector.add_goal(
+                2,
+                Box::new(
+                    BowAttackGoal::new(1.0, attack_interval, 15.0)
+                        .with_hard_attack_interval(hard_attack_interval),
+                ),
+            );
+            goal_selector.add_goal(
+                3,
+                Box::new(MeleeAttackGoal::new(1.2, false).gated_by(is_not_holding_bow)),
+            );
             goal_selector.add_goal(
                 3,
                 Box::new(AvoidEntityGoal::new(&EntityType::WOLF, 6.0, 1.0, 1.2)),
             );
-            goal_selector.add_goal(7, Box::new(WanderAroundGoal::new(1.0)));
+            goal_selector.add_goal(5, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(
-                8,
+                6,
                 LookAtEntityGoal::with_default(mob_weak, &EntityType::PLAYER, 8.0),
             );
-            goal_selector.add_goal(8, Box::new(RandomLookAroundGoal::default()));
+            goal_selector.add_goal(6, Box::new(RandomLookAroundGoal::default()));
 
             target_selector.add_goal(1, Box::new(RevengeGoal::new(true)));
             target_selector.add_goal(
                 2,
                 ActiveTargetGoal::with_default(&mob_arc.mob_entity, &EntityType::PLAYER, true),
             );
+            target_selector.add_goal(
+                3,
+                ActiveTargetGoal::with_default(&mob_arc.mob_entity, &EntityType::IRON_GOLEM, true),
+            );
         };
 
         mob_arc
     }
+}
+
+fn is_not_holding_bow(mob: &dyn Mob) -> bool {
+    !BowAttackGoal::is_holding_bow(mob)
 }
 
 impl Mob for SkeletonEntityBase {
@@ -82,7 +107,17 @@ impl Mob for SkeletonEntityBase {
         let difficulty = RegionalDifficulty::at(world, pos);
         self.populate_default_equipment_slots(world, &difficulty);
         self.populate_default_equipment_enchantments(&difficulty);
+        let can_pick_up = rand::random::<f32>() < 0.55 * difficulty.special_multiplier;
+        self.mob_entity.set_can_pick_up_loot(can_pick_up);
         group_data
+    }
+
+    fn shoot_sound(&self) -> Option<pumpkin_data::sound::Sound> {
+        Some(pumpkin_data::sound::Sound::EntitySkeletonShoot)
+    }
+
+    fn mob_can_freeze(&self) -> bool {
+        false
     }
 
     fn populate_default_equipment_slots(

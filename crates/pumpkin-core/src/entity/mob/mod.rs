@@ -1773,6 +1773,14 @@ pub trait Mob: EntityBase + Send + Sync {
 
     fn mob_cause_fall_damage(&self, _fall_distance: f32, _damage_multiplier: f32) {}
 
+    fn mob_can_freeze(&self) -> bool {
+        true
+    }
+
+    fn shoot_sound(&self) -> Option<pumpkin_data::sound::Sound> {
+        None
+    }
+
     fn mob_killed_entity(
         &self,
         _victim: &dyn EntityBase,
@@ -1803,6 +1811,10 @@ impl<T: Mob + Send + 'static> EntityBase for T {
 
     fn on_fall(&self, fall_distance: f32, damage_multiplier: f32) {
         self.mob_cause_fall_damage(fall_distance, damage_multiplier);
+    }
+
+    fn can_freeze(&self) -> bool {
+        self.mob_can_freeze()
     }
 
     fn killed_entity(

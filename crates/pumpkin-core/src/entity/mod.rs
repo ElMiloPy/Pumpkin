@@ -449,6 +449,10 @@ pub trait EntityBase: Send + Sync + std::any::Any {
 
     fn on_fall(&self, _fall_distance: f32, _damage_multiplier: f32) {}
 
+    fn can_freeze(&self) -> bool {
+        true
+    }
+
     fn killed_entity(
         &self,
         _victim: &dyn EntityBase,
@@ -2606,7 +2610,7 @@ impl Entity {
     /// Mirrors vanilla `LivingEntity#canFreeze`: spectators and entities wearing
     /// freeze-immune wearables (e.g. leather armor) cannot freeze.
     fn can_freeze(&self, caller: &dyn EntityBase) -> bool {
-        if caller.is_spectator() || self.is_freeze_immune() {
+        if caller.is_spectator() || self.is_freeze_immune() || !caller.can_freeze() {
             return false;
         }
 

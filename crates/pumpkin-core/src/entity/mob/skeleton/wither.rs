@@ -5,9 +5,11 @@ use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::potion::Effect;
+use pumpkin_data::sound::{Sound, SoundCategory};
 
 use crate::entity::{
     Entity, EntityBase,
+    custom_sound::CustomSound,
     mob::{Mob, MobEntity, skeleton::SkeletonEntityBase, spawn::SpawnGroupData},
     projectile::arrow::ArrowEntity,
 };
@@ -25,9 +27,31 @@ impl WitherSkeletonEntity {
     }
 }
 
+impl CustomSound for WitherSkeletonEntity {
+    fn death_sound(&self) -> Option<Sound> {
+        Some(Sound::EntityWitherSkeletonDeath)
+    }
+
+    fn hurt_sound(&self) -> Option<Sound> {
+        Some(Sound::EntityWitherSkeletonHurt)
+    }
+
+    fn sound_category(&self) -> SoundCategory {
+        SoundCategory::Hostile
+    }
+}
+
 impl Mob for WitherSkeletonEntity {
     fn get_mob_entity(&self) -> &MobEntity {
         &self.entity.mob_entity
+    }
+
+    fn as_custom_sound(&self) -> Option<&dyn CustomSound> {
+        Some(self)
+    }
+
+    fn shoot_sound(&self) -> Option<Sound> {
+        Some(Sound::EntitySkeletonShoot)
     }
 
     fn finalize_spawn(
