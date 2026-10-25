@@ -28,7 +28,9 @@ use crate::screen_handler::{
 use crate::slot::{NormalSlot, Slot};
 
 use crate::inventory::Inventory;
-use pumpkin_data::data_component_impl::{PotDecorationsImpl, ProvidesPotteryPatternImpl};
+use pumpkin_data::data_component_impl::{
+    FireworksImpl, PotDecorationsImpl, ProvidesPotteryPatternImpl,
+};
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::recipes::{CraftingRecipeTypes, RECIPES_CRAFTING};
 use pumpkin_data::screen::WindowType;
@@ -53,6 +55,7 @@ pub struct RecipeResult {
     pub item_id: String,
     pub count: u8,
     pub pot_decorations: Option<[u16; 4]>,
+    pub fireworks: Option<FireworksImpl>,
 }
 
 impl RecipeResult {
@@ -81,6 +84,9 @@ impl RecipeResult {
             stack.set_data_component(PotDecorationsImpl {
                 sherds: sherd_names,
             });
+        }
+        if let Some(fireworks) = &self.fireworks {
+            stack.set_data_component(fireworks.clone());
         }
         stack
     }
@@ -205,6 +211,7 @@ fn recipe_matches(
                 item_id: result.id.to_string(),
                 count: result.count,
                 pot_decorations: None,
+                fireworks: None,
             })
         }
         GenericRecipe::Vanilla(CraftingRecipeTypes::CraftingShapeless {
@@ -233,6 +240,7 @@ fn recipe_matches(
                 item_id: result.id.to_string(),
                 count: result.count,
                 pot_decorations: None,
+                fireworks: None,
             })
         }
         GenericRecipe::Vanilla(CraftingRecipeTypes::CraftingTransmute {
@@ -257,6 +265,7 @@ fn recipe_matches(
                 item_id: result.id.to_string(),
                 count: result.count,
                 pot_decorations: None,
+                fireworks: None,
             })
         }
         GenericRecipe::Vanilla(CraftingRecipeTypes::CraftingDecoratedPot { .. }) => {
@@ -282,6 +291,7 @@ fn recipe_matches(
                 item_id: "minecraft:decorated_pot".to_string(),
                 count: 1,
                 pot_decorations: Some(sherds),
+                fireworks: None,
             })
         }
         GenericRecipe::Dynamic(OwnedCraftingRecipe::Shaped {
@@ -334,6 +344,7 @@ fn recipe_matches(
                 item_id: result.item_id.clone(),
                 count: result.count,
                 pot_decorations: None,
+                fireworks: None,
             })
         }
         GenericRecipe::Dynamic(OwnedCraftingRecipe::Shapeless {
@@ -362,6 +373,7 @@ fn recipe_matches(
                 item_id: result.item_id.clone(),
                 count: result.count,
                 pot_decorations: None,
+                fireworks: None,
             })
         }
         _ => None,
@@ -396,6 +408,54 @@ pub fn match_crafting_recipe(
     }
     let input_width = bottom_x + 1 - top_x;
     let input_height = bottom_y + 1 - top_y;
+
+    // Vanilla special recipe: FireworkRocketRecipe
+    // 1 paper (shell), 1..=3 gunpowder (fuel), 0..N firework stars
+    let mut has_paper = false;
+    let mut gunpowder_count = 0;
+    let mut is_firework_recipe = true;
+    let mut explosions = Vec::new();
+    let mut firework_items = 0;
+
+    for i in 0..inventory.size() {
+        let slot = inventory.get_stack(i);
+        if !slot.is_empty() {
+            firework_items += 1;
+            if slot.item.id == pumpkin_data::item::Item::PAPER.id {
+                if has_paper {
+                    is_firework_recipe = false;
+                    break;
+                }
+                has_paper = true;
+            } else if slot.item.id == pumpkin_data::item::Item::GUNPOWDER.id {
+                gunpowder_count += 1;
+                if gunpowder_count > 3 {
+                    is_firework_recipe = false;
+                    break;
+                }
+            } else if slot.item.id == pumpkin_data::item::Item::FIREWORK_STAR.id {
+                if let Some(star_exp) = slot
+                    .get_data_component::<pumpkin_data::data_component_impl::FireworkExplosionImpl>(
+                    )
+                {
+                    explosions.push(star_exp.clone());
+                }
+            } else {
+                is_firework_recipe = false;
+                break;
+            }
+        }
+    }
+
+    if is_firework_recipe && has_paper && (1..=3).contains(&gunpowder_count) && firework_items >= 2
+    {
+        return Some(RecipeResult {
+            item_id: "minecraft:firework_rocket".to_string(),
+            count: 3,
+            pot_decorations: None,
+            fireworks: Some(FireworksImpl::new(gunpowder_count, explosions)),
+        });
+    }
 
     for recipe in RECIPES_CRAFTING {
         if let Some(result) = recipe_matches(

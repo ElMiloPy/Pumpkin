@@ -237,17 +237,14 @@ impl EntityBase for FireworkRocketEntity {
     }
 
     fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
-        self.entity.process_tick(caller);
-
         let entity = self.get_entity();
         let world = entity.world.load();
-        let mut velocity = entity.velocity.load();
 
         if let Some(shooter_id) = self.attached_to_entity {
             if let Some(shooter) = world.get_entity_by_id(shooter_id) {
-                let shooter = shooter.get_entity();
+                let shooter_entity = shooter.get_entity();
 
-                if shooter.is_fall_flying() {
+                if shooter_entity.is_fall_flying() {
                     let mut boost_cancelled = false;
                     if let Some(player) = world.get_player_by_id(shooter_id)
                         && let Some(server) = world.server.upgrade()
@@ -263,24 +260,34 @@ impl EntityBase for FireworkRocketEntity {
                         }
                     }
                     if !boost_cancelled {
-                        let rotation = shooter.rotation().to_f64();
-                        let shooter_vel = shooter.velocity.load();
+                        let rotation = shooter_entity.rotation().to_f64();
+                        let shooter_vel = shooter_entity.velocity.load();
 
                         let new_shooter_vel =
                             shooter_vel + (rotation * 0.1 + (rotation * 1.5 - shooter_vel) * 0.5);
 
-                        shooter.set_velocity(new_shooter_vel);
+                        shooter_entity.set_velocity(new_shooter_vel);
 
-                        entity.set_pos(shooter.pos.load());
+                        entity.set_pos(shooter_entity.pos.load());
                         entity.set_velocity(new_shooter_vel);
                     }
+                } else {
+                    entity.set_pos(shooter_entity.pos.load());
+                    entity.set_velocity(shooter_entity.velocity.load());
                 }
+            } else {
+                self.explode_and_remove(&world);
+                return;
             }
-        } else if !self.shot_at_angle.load(Ordering::Relaxed) {
-            velocity.x *= 1.15;
-            velocity.z *= 1.15;
-            velocity.y += 0.04;
-            entity.set_velocity(velocity);
+        } else {
+            self.entity.process_tick(caller);
+            if !self.shot_at_angle.load(Ordering::Relaxed) {
+                let mut velocity = entity.velocity.load();
+                velocity.x *= 1.15;
+                velocity.z *= 1.15;
+                velocity.y += 0.04;
+                entity.set_velocity(velocity);
+            }
         }
 
         let current_life = self.life.fetch_add(1, Ordering::Relaxed);
