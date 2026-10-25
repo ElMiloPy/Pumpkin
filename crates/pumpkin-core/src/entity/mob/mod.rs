@@ -1588,21 +1588,8 @@ pub trait Mob: EntityBase + Send + Sync {
 
     /// Set or clear the mob's target. Override to add side effects when targeting changes.
     fn set_mob_target(&self, target: Option<Arc<dyn EntityBase>>) {
-        let mob = self.get_mob_entity();
         let target = self.as_valid_target(target);
-        let target_id = target.as_ref().map(|t| t.get_entity().entity_id);
-        *mob.target
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = target;
-        let world = mob.living_entity.entity.world.load_full();
-        let entity_id = mob.living_entity.entity.entity_id;
-        if let Some(server) = world.server.upgrade() {
-            let mut event =
-                crate::plugin::api::events::entity::entity_target::EntityTargetEvent::new(
-                    entity_id, target_id,
-                );
-            server.plugin_manager.fire_blocking(&server, &mut event);
-        }
+        default_set_mob_target(self.get_mob_entity(), target);
     }
 
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
@@ -1783,10 +1770,47 @@ pub trait Mob: EntityBase + Send + Sync {
             .living_entity
             .on_lightning_strike(caller, lightning);
     }
+
+    fn mob_cause_fall_damage(&self, _fall_distance: f32, _damage_multiplier: f32) {}
+
+    fn mob_killed_entity(
+        &self,
+        _victim: &dyn EntityBase,
+        _params: &crate::world::loot::LootContextParameters<'_>,
+    ) {
+    }
 }
+
+pub fn default_set_mob_target(mob: &MobEntity, target: Option<Arc<dyn EntityBase>>) {
+    let target_id = target.as_ref().map(|t| t.get_entity().entity_id);
+    *mob.target
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = target;
+    let world = mob.living_entity.entity.world.load_full();
+    let entity_id = mob.living_entity.entity.entity_id;
+    if let Some(server) = world.server.upgrade() {
+        let mut event = crate::plugin::api::events::entity::entity_target::EntityTargetEvent::new(
+            entity_id, target_id,
+        );
+        server.plugin_manager.fire_blocking(&server, &mut event);
+    }
+}
+
 impl<T: Mob + Send + 'static> EntityBase for T {
     fn is_pushed_by_fluids(&self) -> bool {
         self.mob_is_pushed_by_fluids()
+    }
+
+    fn on_fall(&self, fall_distance: f32, damage_multiplier: f32) {
+        self.mob_cause_fall_damage(fall_distance, damage_multiplier);
+    }
+
+    fn killed_entity(
+        &self,
+        victim: &dyn EntityBase,
+        params: &crate::world::loot::LootContextParameters<'_>,
+    ) {
+        self.mob_killed_entity(victim, params);
     }
 
     fn get_mob(&self) -> Option<&dyn Mob> {

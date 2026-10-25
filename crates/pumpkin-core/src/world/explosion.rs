@@ -190,6 +190,7 @@ pub struct Explosion {
     block_interaction: BlockInteraction,
     damage_calculator: Option<Arc<dyn ExplosionDamageCalculator>>,
     preserve_rails: bool,
+    pub source_entity: Option<Arc<dyn EntityBase>>,
 }
 
 impl Explosion {
@@ -201,7 +202,14 @@ impl Explosion {
             block_interaction,
             damage_calculator: None,
             preserve_rails: false,
+            source_entity: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_source(mut self, source: Option<Arc<dyn EntityBase>>) -> Self {
+        self.source_entity = source;
+        self
     }
 
     #[must_use]
@@ -412,7 +420,15 @@ impl Explosion {
             if should_damage {
                 let damage =
                     calc.get_entity_damage_amount(self, entity_base.as_ref(), exposure as f32);
-                entity.damage(entity_base.as_ref(), damage, DamageType::EXPLOSION);
+                let source = self.source_entity.as_deref();
+                entity_base.damage_with_context(
+                    entity_base.as_ref(),
+                    damage,
+                    DamageType::EXPLOSION,
+                    None,
+                    source,
+                    source,
+                );
             }
 
             // Calculate and apply knockback

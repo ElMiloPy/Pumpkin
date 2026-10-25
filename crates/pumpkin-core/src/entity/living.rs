@@ -2105,6 +2105,7 @@ impl LivingEntity {
                     .play_sound(Self::get_fall_sound(fall_distance as i32));
             }
         }
+        caller.on_fall(fall_distance, damage_per_distance);
     }
 
     const fn get_fall_sound(distance: i32) -> Sound {
@@ -2329,6 +2330,10 @@ impl LivingEntity {
 
             // Drop loot
             self.drop_loot(&params);
+
+            if let Some(killer_ent) = killer {
+                killer_ent.killed_entity(dyn_self.as_ref(), &params);
+            }
 
             // Award experience and drop inventory/equipment
             if let Some(player) = dyn_self.get_player() {

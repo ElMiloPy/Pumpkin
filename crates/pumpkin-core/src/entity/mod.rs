@@ -447,6 +447,15 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         self.get_entity().remove();
     }
 
+    fn on_fall(&self, _fall_distance: f32, _damage_multiplier: f32) {}
+
+    fn killed_entity(
+        &self,
+        _victim: &dyn EntityBase,
+        _params: &crate::world::loot::LootContextParameters<'_>,
+    ) {
+    }
+
     /// Returns if damage was successful or not
     fn damage(&self, caller: &dyn EntityBase, amount: f32, damage_type: DamageType) -> bool {
         caller.damage_with_context(caller, amount, damage_type, None, None, None)

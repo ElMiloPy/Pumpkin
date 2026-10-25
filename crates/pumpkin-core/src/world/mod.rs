@@ -3861,7 +3861,17 @@ impl World {
         power: f32,
         interaction: ExplosionInteraction,
     ) {
-        self.explode_with_calculator(position, power, interaction, None);
+        self.explode_with_source(position, power, interaction, None);
+    }
+
+    pub fn explode_with_source(
+        self: &Arc<Self>,
+        position: Vector3<f64>,
+        power: f32,
+        interaction: ExplosionInteraction,
+        source: Option<Arc<dyn EntityBase>>,
+    ) {
+        self.explode_with_calculator_and_source(position, power, interaction, None, source);
     }
 
     pub fn explode_with_calculator(
@@ -3871,8 +3881,25 @@ impl World {
         interaction: ExplosionInteraction,
         damage_calculator: Option<Arc<dyn ExplosionDamageCalculator>>,
     ) {
+        self.explode_with_calculator_and_source(
+            position,
+            power,
+            interaction,
+            damage_calculator,
+            None,
+        );
+    }
+
+    pub fn explode_with_calculator_and_source(
+        self: &Arc<Self>,
+        position: Vector3<f64>,
+        power: f32,
+        interaction: ExplosionInteraction,
+        damage_calculator: Option<Arc<dyn ExplosionDamageCalculator>>,
+        source: Option<Arc<dyn EntityBase>>,
+    ) {
         let block_interaction = self.get_block_interaction(interaction);
-        let mut explosion = Explosion::new(power, position, block_interaction);
+        let mut explosion = Explosion::new(power, position, block_interaction).with_source(source);
         if let Some(calc) = damage_calculator {
             explosion = explosion.with_damage_calculator(calc);
         }
@@ -3917,8 +3944,12 @@ impl World {
     }
 
     fn run_explosion(self: &Arc<Self>, explosion: &Explosion, position: Vector3<f64>, power: f32) {
+        let entity_id = explosion
+            .source_entity
+            .as_ref()
+            .map_or(0, |e| e.get_entity().entity_id);
         let mut event = crate::plugin::api::events::entity::entity_explode::EntityExplodeEvent::new(
-            0, position, power,
+            entity_id, position, power,
         );
         if let Some(server) = self.server.upgrade() {
             server.plugin_manager.fire_blocking(&server, &mut event);
