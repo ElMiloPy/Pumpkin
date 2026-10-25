@@ -613,7 +613,7 @@ impl VillagerEntity {
             self.get_entity().block_pos.load(),
             StructureSet::get(structure_set)?,
             &[structure],
-            100,
+            25,
             &generator,
         )?;
         let server = world.server.upgrade()?;
@@ -866,10 +866,33 @@ impl VillagerEntity {
         };
 
         let current_xp = self.xp.fetch_add(xp_gain, Ordering::Relaxed) + xp_gain;
-        let villager_data = *self
+        let mut villager_data = *self
             .villager_data
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        // Vanilla parity: check if villager should level up
+        // Level XP thresholds: 1: 0, 2: 10, 3: 70, 4: 150, 5: 250
+        const XP_THRESHOLDS: [i32; 5] = [0, 10, 70, 150, 250];
+        let current_level = villager_data.level.0;
+        if current_level >= 1 && current_level < 5 {
+            let needed_xp = XP_THRESHOLDS[current_level as usize];
+            if current_xp >= needed_xp {
+                villager_data.level.0 += 1;
+                self.set_villager_data(villager_data);
+                self.add_trades(villager_data.profession_enum(), villager_data.level.0);
+                self.mob_entity.living_entity.add_effect(Effect {
+                    effect_type: &StatusEffect::REGENERATION,
+                    duration: 200,
+                    amplifier: 0,
+                    ambient: false,
+                    show_particles: true,
+                    show_icon: true,
+                    blend: false,
+                });
+            }
+        }
+
         let bedrock_metadata = Self::bedrock_metadata(villager_data, current_xp);
         self.get_entity()
             .set_synced_data(tracked_data::villager::VILLAGER_DATA, villager_data);
@@ -917,29 +940,18 @@ impl VillagerEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-        let ok = {
-            let screen = player
-                .current_screen_handler
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
-            let mut screen = screen
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if screen.sync_id() != sync_id {
-                false
-            } else if let Some(handler) =
-                screen.as_any_mut().downcast_mut::<MerchantScreenHandler>()
-            {
-                handler.offers.clone_from(&offers);
-                handler.update_result_slot();
-                true
-            } else {
-                false
+        let screen_arc = player
+            .current_screen_handler
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Ok(mut screen) = screen_arc.try_lock() {
+            if screen.sync_id() == sync_id {
+                if let Some(handler) = screen.as_any_mut().downcast_mut::<MerchantScreenHandler>() {
+                    handler.offers.clone_from(&offers);
+                    handler.update_result_slot();
+                }
             }
-        };
-        if !ok {
-            return;
         }
         self.send_trade_offers(player, sync_id, &offers, villager_data);
     }
