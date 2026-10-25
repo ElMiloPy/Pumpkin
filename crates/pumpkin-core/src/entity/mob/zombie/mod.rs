@@ -8,7 +8,7 @@ use crate::entity::ai::goal::wander_around::WanderAroundGoal;
 use crate::entity::ai::goal::zombie_attack::ZombieAttackGoal;
 use crate::entity::mob::equipment::RegionalDifficulty;
 use crate::entity::{
-    Entity,
+    Entity, EntityBase,
     ai::goal::{active_target::ActiveTargetGoal, look_at_entity::LookAtEntityGoal},
 };
 use crate::world::World;
@@ -227,6 +227,33 @@ impl Mob for ZombieEntityBase {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             equipment.put(&EquipmentSlot::MAIN_HAND, ItemStack::new(1, weapon_item));
+        }
+    }
+
+    fn mob_killed_entity(
+        &self,
+        victim: &dyn EntityBase,
+        _params: &crate::world::loot::LootContextParameters<'_>,
+    ) {
+        let world = self.mob_entity.living_entity.entity.world.load_full();
+        let difficulty = world.level_info.load().difficulty;
+        let should_convert = match difficulty {
+            Difficulty::Hard => true,
+            Difficulty::Normal => rand::random::<bool>(),
+            Difficulty::Easy | Difficulty::Peaceful => false,
+        };
+        if should_convert
+            && let Some(villager) = victim
+                .cast_any()
+                .downcast_ref::<crate::entity::passive::villager::VillagerEntity>(
+            )
+        {
+            zombie_villager::ZombieVillagerEntity::convert_from_villager(
+                &world,
+                villager,
+                self.mob_entity.living_entity.entity.is_silent(),
+            );
+            villager.get_entity().remove();
         }
     }
 

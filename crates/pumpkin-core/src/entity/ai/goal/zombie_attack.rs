@@ -1,6 +1,7 @@
 use super::{Controls, Goal};
 
 use crate::entity::ai::goal::melee_attack::MeleeAttackGoal;
+use crate::entity::ai::goal::revenge::MobFilter;
 use crate::entity::mob::Mob;
 
 pub struct ZombieAttackGoal {
@@ -15,6 +16,12 @@ impl ZombieAttackGoal {
             melee_attack_goal: MeleeAttackGoal::new(speed, pause_when_mob_idle),
             ticks: 0,
         })
+    }
+
+    #[must_use]
+    pub fn gated_by(mut self: Box<Self>, gate: MobFilter) -> Box<Self> {
+        self.melee_attack_goal = self.melee_attack_goal.gated_by(gate);
+        self
     }
 }
 
