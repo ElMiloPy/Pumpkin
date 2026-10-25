@@ -79,7 +79,7 @@ impl JavaClient {
                 }
             }
             // <= 1.21.5
-            Action::StartSneaking | Action::StopSneaking => {
+            Action::StartSneaking => {
                 self.handle_player_input(
                     player,
                     &SPlayerInput {
@@ -87,6 +87,9 @@ impl JavaClient {
                     },
                     server,
                 );
+            }
+            Action::StopSneaking => {
+                self.handle_player_input(player, &SPlayerInput { input: 0 }, server);
             }
         }
     }

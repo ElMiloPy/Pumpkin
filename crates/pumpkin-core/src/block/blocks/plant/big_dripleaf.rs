@@ -128,7 +128,7 @@ impl BlockBehaviour for BigDripleafBlock {
                 args.world.set_block_state(
                     &support_pos,
                     dripleaf_stem_props.to_state_id(&Block::BIG_DRIPLEAF_STEM),
-                    BlockFlags::empty(),
+                    BlockFlags::NOTIFY_ALL,
                 );
             }
         }

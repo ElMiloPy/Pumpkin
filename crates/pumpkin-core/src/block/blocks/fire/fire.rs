@@ -261,11 +261,7 @@ impl BlockBehaviour for FireBlock {
             player: None,
             use_item_on: None,
         }) {
-            world.set_block_state(
-                pos,
-                Block::AIR.default_state.id,
-                BlockFlags::NOTIFY_NEIGHBORS,
-            );
+            world.set_block_state(pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
             return;
         }
 
@@ -293,11 +289,7 @@ impl BlockBehaviour for FireBlock {
         if !infiniburn && Self::is_near_rain(world.as_ref(), pos) {
             let rain_chance = 0.2 + (age as f32) * 0.03;
             if rand::random::<f32>() < rain_chance {
-                world.set_block_state(
-                    pos,
-                    Block::AIR.default_state.id,
-                    BlockFlags::NOTIFY_NEIGHBORS,
-                );
+                world.set_block_state(pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
                 return;
             }
         }
@@ -315,7 +307,7 @@ impl BlockBehaviour for FireBlock {
             // Check if fire should extinguish due to lack of fuel
             if !Self::are_blocks_around_flammable(world.as_ref(), pos) {
                 let block_below_state = world.get_block_state(&pos.down());
-                if !block_below_state.is_side_solid(BlockDirection::Up) || new_age > 3 {
+                if !block_below_state.is_side_solid(BlockDirection::Up) || age > 3 {
                     world.set_block_state(pos, Block::AIR.default_state.id, BlockFlags::NOTIFY_ALL);
                     return;
                 }
@@ -448,7 +440,7 @@ impl BlockBehaviour for FireBlock {
                                 world.set_block_state(
                                     &offset_pos,
                                     new_state_id,
-                                    BlockFlags::NOTIFY_NEIGHBORS,
+                                    BlockFlags::NOTIFY_ALL,
                                 );
                             }
                         }

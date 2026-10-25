@@ -254,6 +254,55 @@ impl Mob for MuleEntity {
         );
     }
 
+    fn custom_server_ai_step(&self, _caller: &dyn EntityBase) {
+        if !self.is_tame() && self.get_entity().has_passengers() {
+            let entity = self.get_entity();
+            let passengers = entity
+                .passengers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(passenger) = passengers.first()
+                && let Some(player) = passenger.get_player()
+                && rand::rng().random_range(0..50) == 0
+            {
+                let temper = self.temper.load(Ordering::Relaxed);
+                if rand::rng().random_range(0..100) < temper {
+                    self.set_tame(true);
+                    self.owner.store(Some(player.gameprofile.id));
+                    let world = entity.world.load();
+                    world.send_entity_status(
+                        entity,
+                        pumpkin_data::entity::EntityStatus::TamingSucceeded,
+                        None,
+                    );
+                    world.play_sound(
+                        Sound::EntityMuleAmbient,
+                        SoundCategory::Neutral,
+                        &entity.pos.load(),
+                    );
+                    return;
+                }
+
+                let new_temper = (temper + 5).min(100);
+                self.temper.store(new_temper, Ordering::Relaxed);
+                let player_id = player.entity_id();
+                drop(passengers);
+                entity.remove_passenger(player_id);
+                let world = entity.world.load();
+                world.send_entity_status(
+                    entity,
+                    pumpkin_data::entity::EntityStatus::TamingFailed,
+                    None,
+                );
+                world.play_sound(
+                    Sound::EntityMuleAngry,
+                    SoundCategory::Neutral,
+                    &entity.pos.load(),
+                );
+            }
+        }
+    }
+
     fn mob_interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
         let item = item_stack.get_item();
 
@@ -281,6 +330,49 @@ impl Mob for MuleEntity {
                 &entity.pos.load(),
             );
             return true;
+        }
+
+        if self.is_food(item_stack) {
+            let (heal, temper_inc) = if item == &Item::WHEAT {
+                (2.0f32, 3)
+            } else if item == &Item::SUGAR {
+                (1.0f32, 3)
+            } else if item == &Item::HAY_BLOCK {
+                (20.0f32, 0)
+            } else if item == &Item::APPLE {
+                (3.0f32, 3)
+            } else if item == &Item::GOLDEN_CARROT {
+                (4.0f32, 5)
+            } else if item == &Item::GOLDEN_APPLE || item == &Item::ENCHANTED_GOLDEN_APPLE {
+                (10.0f32, 10)
+            } else {
+                (2.0f32, 3)
+            };
+
+            let living = &self.mob_entity.living_entity;
+            let current_hp = living.health.load();
+            let max_hp = living.get_attribute_value(&Attributes::MAX_HEALTH) as f32;
+            let mut used = false;
+            if current_hp < max_hp && heal > 0.0 {
+                living.set_health((current_hp + heal).min(max_hp));
+                used = true;
+            }
+            let current_temper = self.temper.load(Ordering::Relaxed);
+            if temper_inc > 0 && !self.is_tame() && current_temper < 100 {
+                self.temper
+                    .store((current_temper + temper_inc).min(100), Ordering::Relaxed);
+                used = true;
+            }
+            if used {
+                item_stack.decrement_unless_creative(player.gamemode.load(), 1);
+                let entity = self.get_entity();
+                entity.world.load().play_sound(
+                    Sound::EntityMuleEat,
+                    SoundCategory::Neutral,
+                    &entity.pos.load(),
+                );
+                return true;
+            }
         }
 
         if !self.is_baby() && !self.is_food(item_stack) {

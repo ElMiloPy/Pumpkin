@@ -4151,23 +4151,15 @@ impl Entity {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner) =
                         Some((id.into(), dismount_pos));
-                    // Use send_client_packet so the teleport goes through
-                    // the same packet queue as CSetPassengers, preserving send order.
-                    // Vanilla uses DELTA | ROT flags: position absolute, delta/rotation relative.
-                    // With rotation relative and yaw/pitch=0, the client preserves its current look.
+                    // Vanilla ServerPlayer.stopRiding():
+                    // this.connection.teleport(x, y, z, yRot, xRot, Set.of(Relative.X_ROT, Relative.Y_ROT));
                     player.try_send_client_packet(&CPlayerPosition::new(
                         id.into(),
                         dismount_pos,
                         Vector3::new(0.0, 0.0, 0.0),
                         0.0,
                         0.0,
-                        vec![
-                            PositionFlag::DeltaX,
-                            PositionFlag::DeltaY,
-                            PositionFlag::DeltaZ,
-                            PositionFlag::YRot,
-                            PositionFlag::XRot,
-                        ],
+                        vec![PositionFlag::YRot, PositionFlag::XRot],
                     ));
                 }
 

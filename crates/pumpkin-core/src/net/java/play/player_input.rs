@@ -31,26 +31,8 @@ impl JavaClient {
             player.try_send_client_packet(&CSetCamera::new(player.entity_id().into()));
         }
 
-        if player.get_entity().is_sneaking() != sneak {
-            send_cancellable_blocking! {{
-                server;
-                PlayerToggleSneakEvent::new(player.clone(), sneak);
-                'after: {
-                    player.get_entity().set_sneaking(event.is_sneaking);
-                    if event.is_sneaking {
-                        let vehicle = player
-                            .get_entity()
-                            .vehicle
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .clone();
-                        if let Some(vehicle) = vehicle {
-                            vehicle.get_entity().remove_passenger(player.entity_id());
-                        }
-                    }
-                }
-            }}
-        } else if sneak {
+        // Vanilla: if (packet.input().shiftKeyDown() && this.player.isPassenger()) { this.player.stopRiding(); }
+        if sneak && player.get_entity().has_vehicle() {
             let vehicle = player
                 .get_entity()
                 .vehicle
@@ -60,6 +42,16 @@ impl JavaClient {
             if let Some(vehicle) = vehicle {
                 vehicle.get_entity().remove_passenger(player.entity_id());
             }
+        }
+
+        if player.get_entity().is_sneaking() != sneak {
+            send_cancellable_blocking! {{
+                server;
+                PlayerToggleSneakEvent::new(player.clone(), sneak);
+                'after: {
+                    player.get_entity().set_sneaking(event.is_sneaking);
+                }
+            }}
         }
     }
 }

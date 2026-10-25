@@ -1,13 +1,18 @@
 use std::sync::{
-    Arc, Weak,
+    Arc, Mutex, Weak,
     atomic::{AtomicI32, AtomicU8, Ordering},
 };
 
+use crate::block::entities::beehive::BeehiveBlockEntity;
+use pumpkin_data::Block;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_data::sound::Sound;
+use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
+use pumpkin_nbt::tag::NbtTag;
+use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::vector3::Vector3;
 
 use crate::entity::{
     Entity, EntityBase,
@@ -64,6 +69,7 @@ pub struct BeeEntity {
     pub cannot_enter_hive_ticks: AtomicI32,
     pub crops_grown_since_pollination: AtomicI32,
     pub time_since_sting: AtomicI32,
+    pub hive_pos: Mutex<Option<BlockPos>>,
 }
 
 impl BeeEntity {
@@ -96,6 +102,7 @@ impl BeeEntity {
             cannot_enter_hive_ticks: AtomicI32::new(0),
             crops_grown_since_pollination: AtomicI32::new(0),
             time_since_sting: AtomicI32::new(0),
+            hive_pos: Mutex::new(None),
         };
         let mob_arc = Arc::new(bee);
         let mob_weak: Weak<dyn Mob> = {
@@ -111,7 +118,17 @@ impl BeeEntity {
                 Box::new(MeleeAttackGoal::new(1.4, true).gated_by(can_sting)),
             );
             goal_selector.add_goal(2, BreedGoal::new(1.0));
-            goal_selector.add_goal(3, Box::new(TemptGoal::new(1.25, &[], false)));
+            goal_selector.add_goal(
+                3,
+                Box::new(TemptGoal::with_predicate(
+                    1.25,
+                    |stack| {
+                        stack.item.has_tag(&tag::Item::MINECRAFT_FLOWERS)
+                            || stack.item.has_tag(&tag::Item::MINECRAFT_BEE_FOOD)
+                    },
+                    false,
+                )),
+            );
             goal_selector.add_goal(5, Box::new(FollowParentGoal::new(1.25)));
             goal_selector.add_goal(8, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(9, Box::new(SwimGoal::default()));
@@ -277,6 +294,16 @@ impl Mob for BeeEntity {
             "CropsGrownSincePollination",
             self.crops_grown_since_pollination.load(Ordering::Relaxed),
         );
+        if let Some(pos) = *self
+            .hive_pos
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        {
+            nbt.put(
+                "hive_pos",
+                NbtTag::IntArray(vec![pos.0.x, pos.0.y, pos.0.z]),
+            );
+        }
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
@@ -298,6 +325,17 @@ impl Mob for BeeEntity {
             self.crops_grown_since_pollination
                 .store(crops, Ordering::Relaxed);
         }
+        if let Some(arr) = nbt
+            .get_int_array("hive_pos")
+            .or_else(|| nbt.get_int_array("HivePos"))
+            && arr.len() == 3
+        {
+            *self
+                .hive_pos
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                Some(BlockPos::new(arr[0], arr[1], arr[2]));
+        }
     }
 
     fn get_mob_entity(&self) -> &MobEntity {
@@ -309,8 +347,107 @@ impl Mob for BeeEntity {
             let time = self.time_since_sting.fetch_add(1, Ordering::Relaxed) + 1;
             if time >= 1200 {
                 self.mob_entity.living_entity.set_health(0.0);
+                return;
             }
         }
+
+        let cannot_enter = self.cannot_enter_hive_ticks.load(Ordering::Relaxed);
+        if cannot_enter > 0 {
+            self.cannot_enter_hive_ticks
+                .store(cannot_enter - 1, Ordering::Relaxed);
+        }
+
+        let entity = self.get_entity();
+        let world = entity.world.load();
+
+        if !self.has_nectar() {
+            let ticks = self.ticks_without_nectar.fetch_add(1, Ordering::Relaxed) + 1;
+            if ticks % 40 == 0 {
+                let block_pos = entity.block_pos.load();
+                let block = world.get_block(&block_pos);
+                let block_below = world.get_block(&block_pos.down());
+                if block.has_tag(&tag::Block::MINECRAFT_FLOWERS)
+                    || block_below.has_tag(&tag::Block::MINECRAFT_FLOWERS)
+                {
+                    self.set_has_nectar(true);
+                    self.ticks_without_nectar.store(0, Ordering::Relaxed);
+                    world.play_sound(
+                        Sound::EntityBeePollinate,
+                        SoundCategory::Neutral,
+                        &entity.pos.load(),
+                    );
+                }
+            }
+        }
+
+        if cannot_enter <= 0 && !self.is_angry() {
+            let is_night_or_rain =
+                (world.get_time_of_day().rem_euclid(24000) >= 12000) || world.is_raining();
+            if self.has_nectar() || is_night_or_rain {
+                let mut target_hive = *self
+                    .hive_pos
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if target_hive.is_none() {
+                    let block_pos = entity.block_pos.load();
+                    'search: for dx in -8..=8 {
+                        for dz in -8..=8 {
+                            for dy in -4..=4 {
+                                let check_pos = BlockPos(Vector3::new(
+                                    block_pos.0.x + dx,
+                                    block_pos.0.y + dy,
+                                    block_pos.0.z + dz,
+                                ));
+                                let b = world.get_block(&check_pos);
+                                if b == &Block::BEEHIVE || b == &Block::BEE_NEST {
+                                    if let Some(block_entity) = world.get_block_entity(&check_pos)
+                                        && let Some(beehive) = block_entity
+                                            .as_any()
+                                            .downcast_ref::<BeehiveBlockEntity>()
+                                        && beehive.can_enter_hive()
+                                    {
+                                        target_hive = Some(check_pos);
+                                        *self
+                                            .hive_pos
+                                            .lock()
+                                            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                                            Some(check_pos);
+                                        break 'search;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(hive_p) = target_hive {
+                    let my_pos = entity.pos.load();
+                    let hive_center = hive_p.to_centered_f64();
+                    let dist_sq = (my_pos - hive_center).length_squared();
+                    if dist_sq < 2.5 * 2.5 {
+                        if let Some(block_entity) = world.get_block_entity(&hive_p)
+                            && let Some(beehive) =
+                                block_entity.as_any().downcast_ref::<BeehiveBlockEntity>()
+                        {
+                            if beehive.try_enter_hive(self, &world) {
+                                return;
+                            }
+                        }
+                    } else if dist_sq < 32.0 * 32.0 {
+                        let steered = self.mob_entity.steered();
+                        let mut nav = steered.navigator();
+                        if nav.is_idle() {
+                            nav.set_progress(crate::entity::ai::pathfinder::NavigatorGoal::new(
+                                my_pos,
+                                hive_center,
+                                1.0,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
         self.update_persistent_anger();
     }
 

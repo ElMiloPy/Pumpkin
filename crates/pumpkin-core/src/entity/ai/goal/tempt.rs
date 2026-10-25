@@ -17,6 +17,7 @@ pub struct TemptGoal {
     goal_control: Controls,
     speed: f64,
     tempt_items: &'static [&'static Item],
+    predicate: Option<fn(&pumpkin_data::item_stack::ItemStack) -> bool>,
     can_scare: bool,
     stop_distance: f64,
     target_player: Option<Arc<Player>>,
@@ -34,6 +35,28 @@ impl TemptGoal {
     }
 
     #[must_use]
+    pub fn with_predicate(
+        speed: f64,
+        predicate: fn(&pumpkin_data::item_stack::ItemStack) -> bool,
+        can_scare: bool,
+    ) -> Self {
+        Self {
+            goal_control: Controls::MOVE | Controls::LOOK,
+            speed,
+            tempt_items: &[],
+            predicate: Some(predicate),
+            can_scare,
+            stop_distance: DEFAULT_STOP_DISTANCE,
+            target_player: None,
+            watched_pos: Vector3::new(0.0, 0.0, 0.0),
+            watched_yaw: 0.0,
+            watched_pitch: 0.0,
+            cooldown: 0,
+            running: false,
+        }
+    }
+
+    #[must_use]
     pub fn with_stop_distance(
         speed: f64,
         tempt_items: &'static [&'static Item],
@@ -44,6 +67,7 @@ impl TemptGoal {
             goal_control: Controls::MOVE | Controls::LOOK,
             speed,
             tempt_items,
+            predicate: None,
             can_scare,
             stop_distance,
             target_player: None,
@@ -61,7 +85,13 @@ impl TemptGoal {
     }
 
     fn is_tempt_item(&self, stack: &pumpkin_data::item_stack::ItemStack) -> bool {
-        stack.item_count > 0 && self.tempt_items.iter().any(|i| i.id == stack.item.id)
+        if stack.item_count == 0 {
+            return false;
+        }
+        if let Some(pred) = self.predicate {
+            return pred(stack);
+        }
+        self.tempt_items.iter().any(|i| i.id == stack.item.id)
     }
 
     fn is_holding_tempt_item(&self, player: &Player) -> bool {

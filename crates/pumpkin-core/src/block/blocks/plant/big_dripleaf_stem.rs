@@ -72,7 +72,7 @@ pub fn handle_big_dripleaf_breaking(world: &Arc<World>, position: &BlockPos) {
         world.set_block_state(
             &support_pos,
             dripleaf_props.to_state_id(&Block::BIG_DRIPLEAF),
-            BlockFlags::empty(),
+            BlockFlags::NOTIFY_ALL,
         );
     }
 }
