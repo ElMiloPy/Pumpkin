@@ -259,6 +259,9 @@ impl WitherEntity {
         let current: Vec<Uuid> = players
             .iter()
             .filter(|p| {
+                if !p.living_entity.is_part_of_game() {
+                    return false;
+                }
                 let p_pos = p.living_entity.entity.pos.load();
                 (p_pos - pos).length_squared() < tracking_radius_sq
             })

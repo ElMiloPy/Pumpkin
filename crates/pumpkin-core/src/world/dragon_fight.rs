@@ -1093,6 +1093,9 @@ impl DragonFight {
         let current: Vec<Uuid> = players
             .iter()
             .filter(|p| {
+                if !p.living_entity.is_part_of_game() {
+                    return false;
+                }
                 let pos = p.living_entity.entity.pos.load();
                 let dx = pos.x - origin_x;
                 let dy = pos.y - target_y;

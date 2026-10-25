@@ -356,6 +356,14 @@ impl EntityBase for TridentEntity {
                 hit_pos,
                 ..
             } => {
+                if target.get_entity().entity_type == &pumpkin_data::entity::EntityType::BREEZE {
+                    world.play_sound(Sound::EntityBreezeDeflect, SoundCategory::Hostile, &hit_pos);
+                    let vel = entity.velocity.load().multiply(-0.5, -0.5, -0.5);
+                    entity.velocity.store(vel);
+                    entity.velocity_dirty.store(true, Ordering::Relaxed);
+                    return;
+                }
+
                 let mut damage = Self::BASE_DAMAGE;
 
                 // Apply Impaling enchantment extra damage

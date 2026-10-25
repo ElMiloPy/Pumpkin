@@ -932,6 +932,14 @@ impl EntityBase for ArrowEntity {
                     damage = damage.saturating_add(bonus);
                 }
 
+                if target.get_entity().entity_type == &pumpkin_data::entity::EntityType::BREEZE {
+                    world.play_sound(Sound::EntityBreezeDeflect, SoundCategory::Hostile, &hit_pos);
+                    let vel = entity.velocity.load().multiply(-0.5, -0.5, -0.5);
+                    entity.velocity.store(vel);
+                    entity.velocity_dirty.store(true, Ordering::Relaxed);
+                    return;
+                }
+
                 let is_enderman =
                     target.get_entity().entity_type == &pumpkin_data::entity::EntityType::ENDERMAN;
                 let is_on_fire = entity.is_on_fire() || self.is_flame.load(Ordering::Relaxed);

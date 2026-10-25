@@ -2344,6 +2344,22 @@ impl LivingEntity {
                     }
                     player.drop_inventory();
                 }
+
+                if let Some(ref fight_mutex) = world.dragon_fight {
+                    let mut fight = fight_mutex
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    fight.remove_player(player);
+                }
+                {
+                    let mut raids = world
+                        .raids
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    for raid in raids.raid_map.values_mut() {
+                        raid.remove_player(player);
+                    }
+                }
             } else {
                 if params.killed_by_player.unwrap_or(false)
                     && world.level_info.load().game_rules.mob_drops

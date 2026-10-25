@@ -457,6 +457,9 @@ impl Raid {
         let nearby_players: HashSet<Uuid> = players
             .iter()
             .filter(|player| {
+                if !player.living_entity.is_part_of_game() {
+                    return false;
+                }
                 let pos = player.get_entity().pos.load();
                 pos.squared_distance_to_vec(&center_f64) <= Self::VALID_RAID_RADIUS_SQR
             })
