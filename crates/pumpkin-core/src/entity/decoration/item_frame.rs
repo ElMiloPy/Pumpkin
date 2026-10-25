@@ -271,7 +271,7 @@ impl ItemFrameEntity {
 
 impl EntityBase for ItemFrameEntity {
     fn get_pick_result(&self) -> Option<ItemStack> {
-        let pick = ItemFrameEntity::get_pick_result(self);
+        let pick = Self::get_pick_result(self);
         if pick.is_empty() { None } else { Some(pick) }
     }
 

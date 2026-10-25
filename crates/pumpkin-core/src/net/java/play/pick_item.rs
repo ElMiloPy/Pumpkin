@@ -24,15 +24,16 @@ impl JavaClient {
         };
         let mut stack = ItemStack::new(1, item);
 
-        if pick_item.include_data && player.gamemode.load() == GameMode::Creative {
-            if let Some(block_entity) = world.get_block_entity(&pick_item.pos) {
-                let mut custom_nbt = pumpkin_nbt::compound::NbtCompound::new();
-                custom_nbt.put_string("id", block_entity.resource_location().to_string());
-                block_entity.write_nbt(&mut custom_nbt);
-                stack.set_data_component(pumpkin_data::data_component_impl::BlockEntityDataImpl {
-                    nbt: custom_nbt,
-                });
-            }
+        if pick_item.include_data
+            && player.gamemode.load() == GameMode::Creative
+            && let Some(block_entity) = world.get_block_entity(&pick_item.pos)
+        {
+            let mut custom_nbt = pumpkin_nbt::compound::NbtCompound::new();
+            custom_nbt.put_string("id", block_entity.resource_location().to_string());
+            block_entity.write_nbt(&mut custom_nbt);
+            stack.set_data_component(pumpkin_data::data_component_impl::BlockEntityDataImpl {
+                nbt: custom_nbt,
+            });
         }
 
         Self::try_pick_item(player, stack);
@@ -101,8 +102,7 @@ mod tests {
     use crate::entity::{Entity, EntityBase};
 
     #[tokio::test]
-    async fn test_pick_result_for_vehicles_and_decorations()
-    -> Result<(), Box<dyn std::error::Error>> {
+    async fn pick_result_for_vehicles_and_decorations() -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir = tempfile::tempdir()?;
         let world = world(&temp_dir);
 
@@ -163,11 +163,7 @@ mod tests {
             Some(Item::ORANGE_CUSHION.id)
         );
 
-        let frame_entity = Entity::new(
-            world.clone(),
-            Vector3::new(0.0, 0.0, 0.0),
-            &EntityType::ITEM_FRAME,
-        );
+        let frame_entity = Entity::new(world, Vector3::new(0.0, 0.0, 0.0), &EntityType::ITEM_FRAME);
         let frame = ItemFrameEntity::new(frame_entity);
         assert_eq!(
             EntityBase::get_pick_result(&frame).map(|s| s.item.id),

@@ -290,6 +290,35 @@ impl ZombieVillagerEntity {
         progress
     }
 
+    fn drop_preserved_equipment(&self, world: &Arc<World>, entity_pos: &BlockPos) {
+        let mut equipment = self
+            .mob_entity
+            .mob_entity
+            .living_entity
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let drop_chances = self
+            .mob_entity
+            .mob_entity
+            .living_entity
+            .equipment_drop_chances
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        for (slot, stack) in equipment.equipment.drain() {
+            if !stack.is_empty() {
+                let chance = drop_chances
+                    .get(&slot)
+                    .copied()
+                    .unwrap_or(crate::entity::mob::equipment::DEFAULT_EQUIPMENT_DROP_CHANCE);
+                if chance > 1.0 {
+                    world.drop_stack(entity_pos, stack);
+                }
+            }
+        }
+    }
+
     /// Vanilla `finishConversion`: replace the zombie villager with the villager
     /// it remembers being.
     fn finish_conversion(&self) {
@@ -330,36 +359,8 @@ impl ZombieVillagerEntity {
             Ordering::Relaxed,
         );
 
-        // Drop preserved equipment held by the zombie villager.
-        let mut equipment = self
-            .mob_entity
-            .mob_entity
-            .living_entity
-            .entity_equipment
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let drop_chances = self
-            .mob_entity
-            .mob_entity
-            .living_entity
-            .equipment_drop_chances
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
         let entity_pos = entity.block_pos.load();
-        for (slot, stack) in equipment.equipment.drain() {
-            if !stack.is_empty() {
-                let chance = drop_chances
-                    .get(&slot)
-                    .copied()
-                    .unwrap_or(crate::entity::mob::equipment::DEFAULT_EQUIPMENT_DROP_CHANCE);
-                if chance > 1.0 {
-                    world.drop_stack(&entity_pos, stack);
-                }
-            }
-        }
-        drop(equipment);
-        drop(drop_chances);
+        self.drop_preserved_equipment(&world, &entity_pos);
 
         // Hand the villager back its profession, trades, gossips and trading xp.
         let data = self.get_villager_data();

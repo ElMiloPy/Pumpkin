@@ -20,15 +20,16 @@ impl BedrockClient {
         };
         let mut stack = ItemStack::new(1, item);
 
-        if packet.with_data && player.gamemode.load() == GameMode::Creative {
-            if let Some(block_entity) = world.get_block_entity(&packet.position) {
-                let mut custom_nbt = pumpkin_nbt::compound::NbtCompound::new();
-                custom_nbt.put_string("id", block_entity.resource_location().to_string());
-                block_entity.write_nbt(&mut custom_nbt);
-                stack.set_data_component(pumpkin_data::data_component_impl::BlockEntityDataImpl {
-                    nbt: custom_nbt,
-                });
-            }
+        if packet.with_data
+            && player.gamemode.load() == GameMode::Creative
+            && let Some(block_entity) = world.get_block_entity(&packet.position)
+        {
+            let mut custom_nbt = pumpkin_nbt::compound::NbtCompound::new();
+            custom_nbt.put_string("id", block_entity.resource_location().to_string());
+            block_entity.write_nbt(&mut custom_nbt);
+            stack.set_data_component(pumpkin_data::data_component_impl::BlockEntityDataImpl {
+                nbt: custom_nbt,
+            });
         }
 
         let target_hotbar_slot = packet.max_slots as usize;
