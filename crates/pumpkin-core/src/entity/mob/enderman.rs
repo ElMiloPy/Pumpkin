@@ -5,7 +5,7 @@ use std::sync::{
 
 use crate::entity::attributes::Modifier;
 use crate::entity::attributes::ModifierOperation;
-use pumpkin_data::{BlockStateId, attributes::Attributes};
+use pumpkin_data::{BlockStateId, attributes::Attributes, item::Item, item_stack::ItemStack};
 
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::{
@@ -414,7 +414,19 @@ impl Mob for EndermanEntity {
         self.set_target(self.as_valid_target(target));
     }
 
-    // TODO: sunlight avoidance, carried block drop on death, angerable system, ambient sound override
+    fn drop_inventory(&self) {
+        if let Some(block_state) = self.carried_block.load() {
+            let entity = &self.mob_entity.living_entity.entity;
+            let world = entity.world.load();
+            let block = pumpkin_data::Block::from_state_id(block_state);
+            if let Some(item) = Item::from_id(block.item_id) {
+                let pos = entity.block_pos.load();
+                world.drop_stack(&pos, ItemStack::new(1, item));
+            }
+            self.carried_block.store(None);
+        }
+    }
+
     fn mob_tick(&self, caller: &dyn EntityBase) {
         let entity = &self.mob_entity.living_entity.entity;
         if !entity.is_alive() {
@@ -426,6 +438,7 @@ impl Mob for EndermanEntity {
         let raining_at_head = world.is_raining_at(&entity.bounding_box.load().max_block_pos());
         if entity.touching_water.load(Ordering::SeqCst) || raining_at_feet || raining_at_head {
             caller.damage(caller, 1.0, DamageType::DROWN);
+            self.teleport_randomly();
         }
     }
 

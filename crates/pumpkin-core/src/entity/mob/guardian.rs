@@ -1,18 +1,143 @@
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 
-use pumpkin_data::entity::EntityType;
-use pumpkin_data::{damage::DamageType, sound::Sound};
+use pumpkin_data::attributes::Attributes;
+use pumpkin_data::damage::DamageType;
+use pumpkin_data::entity::{EntityStatus, EntityType};
+use pumpkin_data::sound::Sound;
+use pumpkin_protocol::codec::var_int::VarInt;
+use pumpkin_util::Difficulty;
 
-use crate::entity::custom_sound::CustomSound;
-use crate::entity::{
-    Entity, EntityBase,
-    ai::goal::{
-        active_target::ActiveTargetGoal, look_around::RandomLookAroundGoal,
-        look_at_entity::LookAtEntityGoal, swim::SwimGoal, wander_around::WanderAroundGoal,
-    },
-    mob::{Mob, MobEntity},
+use crate::entity::ai::goal::{
+    Controls, Goal, active_target::ActiveTargetGoal, look_around::RandomLookAroundGoal,
+    look_at_entity::LookAtEntityGoal, swim::SwimGoal, wander_around::WanderAroundGoal,
 };
+use crate::entity::custom_sound::CustomSound;
+use crate::entity::mob::{Mob, MobEntity};
+use crate::entity::{Entity, EntityBase};
+
+pub struct GuardianAttackGoal {
+    _mob: Weak<dyn Mob>,
+    attack_time: i32,
+    elder: bool,
+}
+
+impl GuardianAttackGoal {
+    #[must_use]
+    pub const fn new(mob: Weak<dyn Mob>, elder: bool) -> Self {
+        Self {
+            _mob: mob,
+            attack_time: -10,
+            elder,
+        }
+    }
+}
+
+impl Goal for GuardianAttackGoal {
+    fn can_start(&mut self, mob: &dyn Mob) -> bool {
+        let target = mob.get_mob_entity().get_target().clone();
+        target.is_some_and(|t| t.get_entity().is_alive())
+    }
+
+    fn should_continue(&mut self, mob: &dyn Mob) -> bool {
+        let target = mob.get_mob_entity().get_target().clone();
+        if let Some(target) = target {
+            if !target.get_entity().is_alive() {
+                return false;
+            }
+            if self.elder {
+                return true;
+            }
+            let mob_pos = mob.get_entity().pos.load();
+            let target_pos = target.get_entity().pos.load();
+            mob_pos.squared_distance_to_vec(&target_pos) > 9.0
+        } else {
+            false
+        }
+    }
+
+    fn start(&mut self, mob: &dyn Mob) {
+        self.attack_time = -10;
+        mob.get_mob_entity().steered().navigator().stop();
+        if let Some(target) = mob.get_mob_entity().get_target().clone() {
+            mob.get_mob_entity()
+                .look_control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .look_at_entity_with_range(&target, 90.0, 90.0);
+        }
+    }
+
+    fn stop(&mut self, mob: &dyn Mob) {
+        mob.get_entity().set_synced_data(
+            pumpkin_data::tracked_data::guardian::DATA_ID_ATTACK_TARGET,
+            VarInt(0),
+        );
+        mob.get_mob_entity().set_target(None);
+    }
+
+    fn should_run_every_tick(&self) -> bool {
+        true
+    }
+
+    fn controls(&self) -> Controls {
+        Controls::MOVE | Controls::LOOK
+    }
+
+    fn tick(&mut self, mob: &dyn Mob) {
+        let Some(target) = mob.get_mob_entity().get_target().clone() else {
+            return;
+        };
+
+        mob.get_mob_entity().steered().navigator().stop();
+        mob.get_mob_entity()
+            .look_control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .look_at_entity_with_range(&target, 90.0, 90.0);
+
+        if !mob.has_line_of_sight(target.get_entity()) {
+            mob.get_mob_entity().set_target(None);
+            return;
+        }
+
+        self.attack_time += 1;
+        if self.attack_time == 0 {
+            let target_id = target.get_entity().entity_id;
+            mob.get_entity().set_synced_data(
+                pumpkin_data::tracked_data::guardian::DATA_ID_ATTACK_TARGET,
+                VarInt(target_id),
+            );
+            if !mob.get_entity().is_silent() {
+                let world = mob.get_entity().world.load_full();
+                world.send_entity_status(mob.get_entity(), EntityStatus::GuardianAttackSound, None);
+            }
+        } else if self.attack_time >= 80 {
+            let entity = mob.get_entity();
+            let world = entity.world.load();
+            let mut magic_damage = 1.0f32;
+            if world.level_info.load().difficulty == Difficulty::Hard {
+                magic_damage += 2.0;
+            }
+            if self.elder {
+                magic_damage += 2.0;
+            }
+
+            let attack_damage =
+                mob.get_mob_entity()
+                    .living_entity
+                    .get_attribute_value(&Attributes::ATTACK_DAMAGE) as f32;
+
+            let _ = target.damage(
+                entity,
+                magic_damage + attack_damage,
+                DamageType::INDIRECT_MAGIC,
+            );
+
+            mob.get_mob_entity().set_target(None);
+        }
+    }
+}
 
 pub struct GuardianEntity {
     pub mob_entity: MobEntity,
@@ -32,6 +157,10 @@ impl GuardianEntity {
             let goal_selector = &mob_arc.mob_entity.goals_selector;
 
             goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+            goal_selector.add_goal(
+                1,
+                Box::new(GuardianAttackGoal::new(mob_weak.clone(), false)),
+            );
             goal_selector.add_goal(4, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(
                 5,
