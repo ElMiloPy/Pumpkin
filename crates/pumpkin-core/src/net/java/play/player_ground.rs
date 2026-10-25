@@ -11,6 +11,13 @@ impl JavaClient {
             .entity
             .on_ground
             .store(ground.on_ground, Ordering::Relaxed);
+        if ground.on_ground && player.living_entity.entity.is_fall_flying() {
+            player.living_entity.entity.set_fall_flying(false);
+            player
+                .living_entity
+                .entity
+                .set_pose(pumpkin_data::entity::EntityPose::Standing);
+        }
 
         if !player
             .abilities

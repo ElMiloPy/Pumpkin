@@ -147,6 +147,21 @@ impl BedrockClient {
             if pos_changed {
                 chunker::update_position(player);
                 player.check_location_enchantments(new_pos, on_ground);
+                let in_wall = packet
+                    .input_data
+                    .get(InputData::HorizontalCollision as usize);
+                if entity.is_fall_flying() {
+                    player.living_entity.handle_fall_flying_collisions(
+                        player.as_ref(),
+                        in_wall,
+                        delta.horizontal_length(),
+                    );
+                } else {
+                    player
+                        .living_entity
+                        .last_fall_flying_horizontal_speed
+                        .store(0.0);
+                }
                 player.progress_motion(delta);
             }
         }

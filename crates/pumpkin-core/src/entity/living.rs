@@ -16,7 +16,7 @@ use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{
-    AtomicBool, AtomicI32, AtomicI64, AtomicU8,
+    AtomicBool, AtomicI32, AtomicI64, AtomicU8, AtomicU32,
     Ordering::{Relaxed, SeqCst},
 };
 use tracing::warn;
@@ -93,6 +93,8 @@ pub struct LivingEntity {
     pub dead: AtomicBool,
     /// The distance the entity has been falling.
     pub fall_distance: AtomicCell<f32>,
+    pub fall_fly_ticks: AtomicU32,
+    pub last_fall_flying_horizontal_speed: AtomicCell<f64>,
     pub active_effects: std::sync::Mutex<FxHashMap<&'static StatusEffect, Effect>>,
     pub entity_equipment: Arc<std::sync::Mutex<EntityEquipment>>,
     pub equipment_drop_chances: Arc<std::sync::Mutex<FxHashMap<EquipmentSlot, f32>>>,
@@ -302,6 +304,8 @@ impl LivingEntity {
             last_damage_taken: AtomicCell::new(0.0),
             absorption: AtomicCell::new(0.0),
             fall_distance: AtomicCell::new(0.0),
+            fall_fly_ticks: AtomicU32::new(0),
+            last_fall_flying_horizontal_speed: AtomicCell::new(0.0),
             death_time: AtomicU8::new(0),
             dead: AtomicBool::new(false),
             item_use_time: AtomicI32::new(0),
@@ -1597,10 +1601,10 @@ impl LivingEntity {
         }
     }
 
-    /// Decays player velocity like vanilla `travelInAir` friction.
+    /// Decays player velocity like vanilla `travel` friction and drag.
     fn apply_travel_friction(&self) {
         let mut velo = self.entity.velocity.load();
-        if velo.x == 0.0 && velo.z == 0.0 {
+        if velo.x == 0.0 && velo.y == 0.0 && velo.z == 0.0 {
             return;
         }
 
@@ -1612,8 +1616,18 @@ impl LivingEntity {
             );
 
         velo.x *= friction;
-
         velo.z *= friction;
+        velo.y *= 0.98;
+
+        if velo.x.abs() < 0.003 {
+            velo.x = 0.0;
+        }
+        if velo.y.abs() < 0.003 {
+            velo.y = 0.0;
+        }
+        if velo.z.abs() < 0.003 {
+            velo.z = 0.0;
+        }
 
         self.entity.velocity.store(velo);
     }
@@ -2019,8 +2033,19 @@ impl LivingEntity {
             let new_fall_distance = if !self.should_prevent_fall_damage()
                 && !self.should_prevent_fall_damage_in_area()
             {
-                let distance = self.fall_distance.load();
-                distance - (height_difference as f32)
+                if self.entity.is_fall_flying() {
+                    // Vanilla `Entity.checkFallDistanceAccumulation`:
+                    // When gliding with vertical speed > -0.5, fallDistance is capped at 1.0.
+                    if height_difference > -0.5 {
+                        self.fall_distance.load().min(1.0)
+                    } else {
+                        let distance = self.fall_distance.load();
+                        distance - (height_difference as f32)
+                    }
+                } else {
+                    let distance = self.fall_distance.load();
+                    distance - (height_difference as f32)
+                }
             } else {
                 0f32
             };
@@ -2088,6 +2113,31 @@ impl LivingEntity {
         } else {
             Sound::EntityGenericSmallFall
         }
+    }
+
+    /// Vanilla `handleFallFlyingCollisions`: kinetic damage when flying into a wall.
+    pub fn handle_fall_flying_collisions(
+        &self,
+        caller: &dyn EntityBase,
+        horizontal_collision: bool,
+        current_horizontal_speed: f64,
+    ) {
+        let prev_speed = self.last_fall_flying_horizontal_speed.load();
+        if horizontal_collision {
+            let diff = (prev_speed - current_horizontal_speed).max(0.0);
+            let dmg = (diff * 10.0 - 3.0) as f32;
+            if dmg > 0.0 {
+                let sound = if (dmg as i32) > 4 {
+                    Sound::EntityGenericBigFall
+                } else {
+                    Sound::EntityGenericSmallFall
+                };
+                self.entity.play_sound(sound);
+                self.damage(caller, dmg, DamageType::FLY_INTO_WALL);
+            }
+        }
+        self.last_fall_flying_horizontal_speed
+            .store(current_horizontal_speed);
     }
 
     #[allow(clippy::redundant_closure_for_method_calls)]
@@ -2161,6 +2211,9 @@ impl LivingEntity {
         {
             self.movement_input.store(Vector3::default());
             self.jumping.store(false, Relaxed);
+            self.entity.set_fall_flying(false);
+            self.fall_fly_ticks.store(0, Relaxed);
+            self.last_fall_flying_horizontal_speed.store(0.0);
 
             let kill_credit = self.get_kill_credit();
             let killer = cause.or(source).or(kill_credit.as_deref());
@@ -2745,12 +2798,16 @@ impl LivingEntity {
         last.map(|damage_type| (damage_type, self.last_damage_attacker.load(Relaxed)))
     }
 
+    pub fn is_alive(&self) -> bool {
+        self.entity.is_alive() && !self.is_dead_or_dying()
+    }
+
     pub fn can_take_damage(&self) -> bool {
         !self.entity.invulnerable.load(Ordering::Relaxed) && self.is_part_of_game()
     }
 
     pub fn is_part_of_game(&self) -> bool {
-        !self.is_spectator() && self.entity.is_alive()
+        !self.is_spectator() && self.is_alive()
     }
 
     pub fn can_attack(&self, target: &dyn EntityBase) -> bool {
@@ -2763,6 +2820,11 @@ impl LivingEntity {
     }
 
     pub fn reset_state(&self) {
+        self.dead.store(false, Relaxed);
+        self.death_time.store(0, Relaxed);
+        self.fall_fly_ticks.store(0, Relaxed);
+        self.last_fall_flying_horizontal_speed.store(0.0);
+        self.fall_distance.store(0.0);
         self.entity.reset_state();
 
         // Restore to maximum health for this entity type
@@ -3624,6 +3686,40 @@ impl EntityBase for LivingEntity {
             // Vanilla-like order: freeze logic runs after movement/collisions.
             self.entity.tick_frozen(caller);
         } else if is_alive {
+            if self.entity.is_fall_flying() {
+                let fly_ticks = self.fall_fly_ticks.fetch_add(1, Relaxed) + 1;
+                if self.entity.on_ground.load(Relaxed) {
+                    self.entity.set_fall_flying(false);
+                    self.entity.set_pose(EntityPose::Standing);
+                    self.fall_fly_ticks.store(0, Relaxed);
+                    self.last_fall_flying_horizontal_speed.store(0.0);
+                } else if let Some(player) = caller.get_player() {
+                    let chest_stack = player.inventory.get_slot(38);
+                    let has_glider = chest_stack
+                        .get_data_component::<pumpkin_data::data_component_impl::GliderImpl>()
+                        .is_some();
+                    let can_glide = has_glider && !chest_stack.next_damage_will_break();
+                    if !can_glide {
+                        self.entity.set_fall_flying(false);
+                        self.entity.set_pose(EntityPose::Standing);
+                        self.fall_fly_ticks.store(0, Relaxed);
+                        self.last_fall_flying_horizontal_speed.store(0.0);
+                    } else if fly_ticks % 20 == 0 {
+                        player.damage_item_in_slot(&EquipmentSlot::CHEST, 1);
+                        let updated_chest = player.inventory.get_slot(38);
+                        if updated_chest.next_damage_will_break() {
+                            self.entity.set_fall_flying(false);
+                            self.entity.set_pose(EntityPose::Standing);
+                            self.fall_fly_ticks.store(0, Relaxed);
+                            self.last_fall_flying_horizontal_speed.store(0.0);
+                        }
+                    }
+                }
+            } else {
+                self.fall_fly_ticks.store(0, Relaxed);
+                self.last_fall_flying_horizontal_speed.store(0.0);
+            }
+
             // Client-authoritative players skip `travel`, so decay pushed velocity like
             // vanilla to prevent it accumulating and launching the player.
             self.apply_travel_friction();

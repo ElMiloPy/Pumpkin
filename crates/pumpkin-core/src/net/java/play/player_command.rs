@@ -70,6 +70,11 @@ impl JavaClient {
                     server.plugin_manager.fire_blocking(server, &mut event);
                     if !event.cancelled {
                         entity.set_fall_flying(event.is_gliding);
+                        entity.set_pose(if event.is_gliding {
+                            pumpkin_data::entity::EntityPose::FallFlying
+                        } else {
+                            pumpkin_data::entity::EntityPose::Standing
+                        });
                     }
                 }
             }

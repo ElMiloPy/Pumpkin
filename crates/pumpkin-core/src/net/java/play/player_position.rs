@@ -123,6 +123,7 @@ impl JavaClient {
                 entity.on_ground.store(new_on_ground, Ordering::Relaxed);
                 if new_on_ground && entity.is_fall_flying() {
                     entity.set_fall_flying(false);
+                    entity.set_pose(pumpkin_data::entity::EntityPose::Standing);
                 }
                 let world = &player.world();
 
@@ -167,6 +168,19 @@ impl JavaClient {
                     pos.y - last_pos.y,
                     pos.z - last_pos.z,
                 );
+                let in_wall = packet.collision & FLAG_IN_WALL != 0;
+                if entity.is_fall_flying() {
+                    player.living_entity.handle_fall_flying_collisions(
+                        player.as_ref(),
+                        in_wall,
+                        delta.horizontal_length(),
+                    );
+                } else {
+                    player
+                        .living_entity
+                        .last_fall_flying_horizontal_speed
+                        .store(0.0);
+                }
                 // Only update idle timeout if there's actual movement (vanilla threshold)
                 if delta.length_squared() > 1.0E-5 {
                     player.update_last_action_time();
@@ -262,9 +276,12 @@ impl JavaClient {
                 {
                     player.jump();
                 }
-                entity
-                    .on_ground
-                    .store((packet.collision & FLAG_ON_GROUND) != 0, Ordering::Relaxed);
+                let new_on_ground = (packet.collision & FLAG_ON_GROUND) != 0;
+                entity.on_ground.store(new_on_ground, Ordering::Relaxed);
+                if new_on_ground && entity.is_fall_flying() {
+                    entity.set_fall_flying(false);
+                    entity.set_pose(pumpkin_data::entity::EntityPose::Standing);
+                }
 
                 entity.set_rotation(wrap_degrees(packet.yaw) % 360.0, wrap_degrees(packet.pitch));
 
@@ -326,6 +343,19 @@ impl JavaClient {
                     pos.y - last_pos.y,
                     pos.z - last_pos.z,
                 );
+                let in_wall = (packet.collision & FLAG_IN_WALL) != 0;
+                if entity.is_fall_flying() {
+                    player.living_entity.handle_fall_flying_collisions(
+                        player.as_ref(),
+                        in_wall,
+                        delta.horizontal_length(),
+                    );
+                } else {
+                    player
+                        .living_entity
+                        .last_fall_flying_horizontal_speed
+                        .store(0.0);
+                }
                 // Only update idle timeout if there's actual movement (vanilla threshold)
                 if delta.length_squared() > 1.0E-5 {
                     player.update_last_action_time();

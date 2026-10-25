@@ -172,6 +172,14 @@ impl dyn EntityBase + '_ {
 }
 
 pub trait EntityBase: Send + Sync + std::any::Any {
+    fn is_alive(&self) -> bool {
+        if let Some(living) = self.get_living_entity() {
+            living.is_alive()
+        } else {
+            self.get_entity().is_alive()
+        }
+    }
+
     fn write_nbt(&self, nbt: &mut NbtCompound) {
         self.get_entity().write_nbt(nbt);
         if let Some(living) = self.get_living_entity() {
@@ -664,7 +672,10 @@ pub trait EntityBase: Send + Sync + std::any::Any {
             dx *= PUSH_STRENGTH;
             dz *= PUSH_STRENGTH;
 
-            if !self_entity.has_passengers() && self.is_pushable() {
+            let self_is_player = self_entity.entity_type == &EntityType::PLAYER;
+            let other_is_player = other_entity.entity_type == &EntityType::PLAYER;
+
+            if !self_entity.has_passengers() && self.is_pushable() && !self_is_player {
                 let mut vel = self_entity.velocity.load();
                 vel.x -= dx;
                 vel.z -= dz;
@@ -672,7 +683,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
                 self_entity.velocity_dirty.store(true, Ordering::SeqCst);
             }
 
-            if !other_entity.has_passengers() && entity.is_pushable() {
+            if !other_entity.has_passengers() && entity.is_pushable() && !other_is_player {
                 let mut vel = other_entity.velocity.load();
                 vel.x += dx;
                 vel.z += dz;
@@ -2937,9 +2948,12 @@ impl Entity {
     }
 
     pub fn set_fall_flying(&self, fall_flying: bool) {
-        assert_ne!(self.fall_flying.load(Relaxed), fall_flying);
-        self.fall_flying.store(fall_flying, Relaxed);
-        self.set_flag(Flag::FallFlying, fall_flying);
+        let prev = self.fall_flying.swap(fall_flying, Relaxed);
+        let flag_set =
+            (self.flags.load(Ordering::Relaxed) & (1i8 << (Flag::FallFlying as u8))) != 0;
+        if prev != fall_flying || flag_set != fall_flying {
+            self.set_flag(Flag::FallFlying, fall_flying);
+        }
     }
     pub fn is_fall_flying(&self) -> bool {
         self.fall_flying.load(Ordering::Relaxed)
@@ -4106,8 +4120,9 @@ impl Entity {
     }
 
     pub fn reset_state(&self) {
-        self.pose.store(EntityPose::Standing);
-        self.fall_flying.store(false, Relaxed);
+        self.pose.store(EntityPose::Dying);
+        self.set_pose(EntityPose::Standing);
+        self.set_fall_flying(false);
         self.extinguish();
         self.set_on_fire(false);
     }
