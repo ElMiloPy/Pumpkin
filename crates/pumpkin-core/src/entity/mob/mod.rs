@@ -1446,6 +1446,10 @@ pub trait Mob: EntityBase + Send + Sync {
         None
     }
 
+    fn as_villager(&self) -> Option<&crate::entity::passive::villager::VillagerEntity> {
+        None
+    }
+
     fn as_crossbow_attack_mob(&self) -> Option<&dyn crossbow_attack_mob::CrossbowAttackMob> {
         None
     }

@@ -2218,6 +2218,35 @@ impl LivingEntity {
             let kill_credit = self.get_kill_credit();
             let killer = cause.or(source).or(kill_credit.as_deref());
 
+            // Vanilla `Zombie.killedEntity`: zombie converting a villager into a zombie villager
+            if let Some(villager) = dyn_self.get_mob().and_then(|m| m.as_villager())
+                && let Some(killer_ent) = killer
+            {
+                let killer_type = killer_ent.get_entity().entity_type;
+                if killer_type == &EntityType::ZOMBIE
+                    || killer_type == &EntityType::HUSK
+                    || killer_type == &EntityType::DROWNED
+                    || killer_type == &EntityType::ZOMBIE_VILLAGER
+                    || killer_type == &EntityType::ZOMBIFIED_PIGLIN
+                {
+                    let difficulty = world.level_info.load().difficulty;
+                    let convert = match difficulty {
+                        Difficulty::Peaceful | Difficulty::Easy => false,
+                        Difficulty::Normal => rand::random::<bool>(),
+                        Difficulty::Hard => true,
+                    };
+                    if convert {
+                        crate::entity::mob::zombie::zombie_villager::ZombieVillagerEntity::convert_from_villager(
+                            &world,
+                            villager,
+                            killer_ent.get_entity().is_silent(),
+                        );
+                        self.entity.remove();
+                        return;
+                    }
+                }
+            }
+
             self.update_death_stats(&*dyn_self, killer);
 
             // Plays the death sound
@@ -3704,7 +3733,7 @@ impl EntityBase for LivingEntity {
                         self.entity.set_pose(EntityPose::Standing);
                         self.fall_fly_ticks.store(0, Relaxed);
                         self.last_fall_flying_horizontal_speed.store(0.0);
-                    } else if fly_ticks % 20 == 0 {
+                    } else if fly_ticks.is_multiple_of(20) {
                         player.damage_item_in_slot(&EquipmentSlot::CHEST, 1);
                         let updated_chest = player.inventory.get_slot(38);
                         if updated_chest.next_damage_will_break() {

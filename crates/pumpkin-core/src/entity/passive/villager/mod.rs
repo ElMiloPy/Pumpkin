@@ -576,6 +576,14 @@ impl VillagerEntity {
         }
     }
 
+    #[must_use]
+    pub fn get_villager_data(&self) -> VillagerData {
+        *self
+            .villager_data
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     pub fn set_villager_data(&self, data: VillagerData) {
         let old_profession = {
             let mut villager_data = self
@@ -1886,6 +1894,10 @@ impl VillagerEntity {
 }
 
 impl Mob for VillagerEntity {
+    fn as_villager(&self) -> Option<&VillagerEntity> {
+        Some(self)
+    }
+
     #[expect(clippy::too_many_lines)]
     fn mob_write_nbt(&self, nbt: &mut NbtCompound) {
         {

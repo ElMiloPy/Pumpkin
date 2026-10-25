@@ -104,6 +104,130 @@ impl ZombieVillagerEntity {
         self.mob_entity.is_baby()
     }
 
+    pub fn set_baby(&self, baby: bool) {
+        self.mob_entity.set_baby(baby);
+        self.get_entity()
+            .set_synced_data(tracked_data::zombie_villager::DATA_BABY_ID, baby);
+    }
+
+    /// Vanilla `Zombie.convertVillagerToZombieVillager`: replaces the villager with
+    /// a matching zombie villager carrying over profession, trades, gossips, and XP.
+    pub fn convert_from_villager(
+        world: &Arc<World>,
+        villager: &VillagerEntity,
+        is_silent: bool,
+    ) -> Arc<Self> {
+        let v_entity = villager.get_entity();
+        let zombie_villager = Self::new(Entity::new(
+            world.clone(),
+            v_entity.pos.load(),
+            &EntityType::ZOMBIE_VILLAGER,
+        ));
+        let zv_entity = zombie_villager.get_entity();
+        zv_entity.set_rotation(v_entity.yaw.load(), v_entity.pitch.load());
+        zv_entity.head_yaw.store(v_entity.head_yaw.load());
+        zv_entity.velocity.store(v_entity.velocity.load());
+        zv_entity.invulnerable.store(
+            v_entity.invulnerable.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        if v_entity.age.load(Ordering::Relaxed) < 0 {
+            zombie_villager.set_baby(true);
+            zv_entity
+                .age
+                .store(v_entity.age.load(Ordering::Relaxed), Ordering::Relaxed);
+        }
+        if let Some(custom_name) = &**v_entity.custom_name.load() {
+            zv_entity.set_custom_name(custom_name.clone());
+            zv_entity.set_custom_name_visible(v_entity.custom_name_visible.load(Ordering::Relaxed));
+        }
+        zombie_villager
+            .mob_entity
+            .mob_entity
+            .set_no_ai(villager.mob_entity.is_no_ai());
+        zombie_villager
+            .mob_entity
+            .mob_entity
+            .persistence_required
+            .store(
+                villager
+                    .mob_entity
+                    .persistence_required
+                    .load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+
+        // Copy equipment & drop chances if any
+        let src_equipment = villager
+            .mob_entity
+            .living_entity
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut dst_equipment = zombie_villager
+            .mob_entity
+            .mob_entity
+            .living_entity
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (*dst_equipment).clone_from(&src_equipment);
+        drop(src_equipment);
+        drop(dst_equipment);
+
+        let src_chances = villager
+            .mob_entity
+            .living_entity
+            .equipment_drop_chances
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut dst_chances = zombie_villager
+            .mob_entity
+            .mob_entity
+            .living_entity
+            .equipment_drop_chances
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (*dst_chances).clone_from(&src_chances);
+        drop(src_chances);
+        drop(dst_chances);
+
+        // Copy villager data, offers, gossips, and trading XP
+        let villager_data = villager.get_villager_data();
+        let villager_xp = villager.xp.load(Ordering::Relaxed);
+        let mut villager_nbt = NbtCompound::new();
+        villager.mob_write_nbt(&mut villager_nbt);
+
+        let mut carried = NbtCompound::new();
+        if let Some(offers) = villager_nbt.get_compound("Offers") {
+            carried.put_compound("Offers", offers.clone());
+        }
+        if let Some(gossips) = villager_nbt.get_list("Gossips") {
+            carried.put_list("Gossips", gossips.to_vec());
+        }
+        *zombie_villager
+            .villager_nbt
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = carried;
+
+        zombie_villager.set_villager_data(villager_data);
+        zombie_villager
+            .villager_xp
+            .store(villager_xp, Ordering::Relaxed);
+
+        world.spawn_entity(zombie_villager.clone());
+
+        if !is_silent {
+            world.sync_world_event(
+                WorldEvent::SoundZombieInfected,
+                v_entity.block_pos.load(),
+                0,
+            );
+        }
+
+        zombie_villager
+    }
+
     /// Vanilla `startConverting`: begin the cure, swapping Weakness for Strength
     /// and telling clients to play the cure sound.
     pub fn start_converting(&self, starter: Option<Uuid>, ticks: i32) {
