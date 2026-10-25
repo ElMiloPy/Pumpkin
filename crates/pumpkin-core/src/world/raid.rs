@@ -14,6 +14,7 @@ use pumpkin_util::text::TextComponent;
 
 use crate::entity::EntityBase;
 use crate::entity::mob::raider::create_ominous_banner;
+use crate::entity::player::Player;
 use crate::entity::r#type::from_type;
 use crate::world::World;
 use crate::world::bossbar::{Bossbar, BossbarColor, BossbarDivisions};
@@ -249,10 +250,22 @@ impl Raid {
         self.remove_all_players(world);
     }
 
+    pub fn remove_player(&mut self, player: &Player) {
+        if self.players_in_raid.remove(&player.gameprofile.id) {
+            player.remove_bossbar(self.bossbar.uuid);
+        }
+    }
+
     pub fn remove_all_players(&mut self, world: &World) {
+        let server = world.server.upgrade();
         let players = world.players.load();
-        for player in players.iter() {
-            if self.players_in_raid.contains(&player.gameprofile.id) {
+        for &id in &self.players_in_raid {
+            let player = players
+                .iter()
+                .find(|p| p.gameprofile.id == id)
+                .cloned()
+                .or_else(|| server.as_ref().and_then(|s| s.get_player_by_uuid(id)));
+            if let Some(player) = player {
                 player.remove_bossbar(self.bossbar.uuid);
             }
         }
@@ -450,17 +463,31 @@ impl Raid {
             .map(|player| player.gameprofile.id)
             .collect();
 
-        for player in players.iter() {
-            let id = player.gameprofile.id;
-            let was_in = self.players_in_raid.contains(&id);
-            let is_in = nearby_players.contains(&id);
+        let server = world.server.upgrade();
+        let to_remove: Vec<Uuid> = self
+            .players_in_raid
+            .iter()
+            .filter(|id| !nearby_players.contains(id))
+            .copied()
+            .collect();
 
-            if !was_in && is_in {
-                player.send_bossbar(&self.bossbar);
-                self.players_in_raid.insert(id);
-            } else if was_in && !is_in {
+        for id in to_remove {
+            let player = players
+                .iter()
+                .find(|p| p.gameprofile.id == id)
+                .cloned()
+                .or_else(|| server.as_ref().and_then(|s| s.get_player_by_uuid(id)));
+            if let Some(player) = player {
                 player.remove_bossbar(self.bossbar.uuid);
-                self.players_in_raid.remove(&id);
+            }
+            self.players_in_raid.remove(&id);
+        }
+
+        for id in nearby_players {
+            if self.players_in_raid.insert(id)
+                && let Some(player) = players.iter().find(|p| p.gameprofile.id == id)
+            {
+                player.send_bossbar(&self.bossbar);
             }
         }
     }

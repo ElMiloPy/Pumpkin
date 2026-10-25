@@ -19,7 +19,9 @@ use super::{
     World,
     bossbar::{Bossbar, BossbarColor, BossbarDivisions, BossbarFlags},
 };
-use crate::entity::{Entity, EntityBase, decoration::end_crystal::EndCrystalEntity};
+use crate::entity::{
+    Entity, EntityBase, decoration::end_crystal::EndCrystalEntity, player::Player,
+};
 
 // ── Constants (match vanilla exactly) ────────────────────────────────────────
 
@@ -1059,9 +1061,23 @@ impl DragonFight {
         }
     }
 
+    pub fn remove_player(&mut self, player: &Player) {
+        if self.bossbar_players.contains(&player.gameprofile.id) {
+            player.remove_bossbar(self.bossbar_uuid);
+            self.bossbar_players.retain(|u| u != &player.gameprofile.id);
+        }
+    }
+
     fn remove_all_bossbar(&mut self, world: &Arc<World>) {
-        for player in world.players.load().iter() {
-            if self.bossbar_players.contains(&player.gameprofile.id) {
+        let server = world.server.upgrade();
+        let players = world.players.load();
+        for &uid in &self.bossbar_players {
+            let player = players
+                .iter()
+                .find(|p| p.gameprofile.id == uid)
+                .cloned()
+                .or_else(|| server.as_ref().and_then(|s| s.get_player_by_uuid(uid)));
+            if let Some(player) = player {
                 player.remove_bossbar(self.bossbar_uuid);
             }
         }
@@ -1106,8 +1122,14 @@ impl DragonFight {
             .copied()
             .collect();
 
+        let server = world.server.upgrade();
         for uid in &to_remove {
-            if let Some(player) = players.iter().find(|player| &player.gameprofile.id == uid) {
+            let player = players
+                .iter()
+                .find(|player| &player.gameprofile.id == uid)
+                .cloned()
+                .or_else(|| server.as_ref().and_then(|s| s.get_player_by_uuid(*uid)));
+            if let Some(player) = player {
                 player.remove_bossbar(self.bossbar_uuid);
             }
             self.bossbar_players.retain(|u| u != uid);

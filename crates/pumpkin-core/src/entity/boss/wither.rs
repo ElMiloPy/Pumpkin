@@ -287,8 +287,14 @@ impl WitherEntity {
             .copied()
             .collect();
 
+        let server = world.server.upgrade();
         for uid in &to_remove {
-            if let Some(p) = players.iter().find(|p| &p.gameprofile.id == uid) {
+            let p = players
+                .iter()
+                .find(|p| &p.gameprofile.id == uid)
+                .cloned()
+                .or_else(|| server.as_ref().and_then(|s| s.get_player_by_uuid(*uid)));
+            if let Some(p) = p {
                 p.remove_bossbar(self.bossbar_uuid);
             }
             bossbar_players.retain(|u| u != uid);
@@ -306,9 +312,15 @@ impl WitherEntity {
             .bossbar_players
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let server = world.server.upgrade();
         let players = world.players.load();
-        for player in players.iter() {
-            if bossbar_players.contains(&player.gameprofile.id) {
+        for &uid in bossbar_players.iter() {
+            let player = players
+                .iter()
+                .find(|p| p.gameprofile.id == uid)
+                .cloned()
+                .or_else(|| server.as_ref().and_then(|s| s.get_player_by_uuid(uid)));
+            if let Some(player) = player {
                 player.remove_bossbar(self.bossbar_uuid);
             }
         }

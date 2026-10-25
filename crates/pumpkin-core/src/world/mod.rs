@@ -4908,6 +4908,22 @@ impl World {
         player: &Arc<Player>,
         fire_event: bool,
     ) -> Option<Arc<Player>> {
+        if let Some(ref fight_mutex) = self.dragon_fight {
+            let mut fight = fight_mutex
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            fight.remove_player(player);
+        }
+        {
+            let mut raids = self
+                .raids
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for raid in raids.raid_map.values_mut() {
+                raid.remove_player(player);
+            }
+        }
+
         let mut removed_player: Option<Arc<Player>> = None;
 
         self.players.rcu(|current_list| {
