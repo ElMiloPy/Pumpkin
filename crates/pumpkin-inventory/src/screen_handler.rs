@@ -508,7 +508,7 @@ pub trait ScreenHandler: Send + Sync {
     /// Updates a tracked property value.
     fn update_tracked_properties(&mut self, idx: i32, value: i32) {
         let behaviour = self.get_behaviour_mut();
-        if idx <= behaviour.tracked_property_values.len() as i32 {
+        if (idx as usize) < behaviour.tracked_property_values.len() {
             behaviour.tracked_property_values[idx as usize] = value;
             for listener in &behaviour.listeners {
                 listener.on_property_update(behaviour, idx as u8, value);
@@ -524,9 +524,7 @@ pub trait ScreenHandler: Send + Sync {
         {
             let old_value = *old_value;
             if old_value != value {
-                behaviour
-                    .tracked_property_values
-                    .insert(idx as usize, value);
+                behaviour.tracked_property_values[idx as usize] = value;
                 if let Some(ref sync_handler) = behaviour.sync_handler {
                     sync_handler.update_property(behaviour, idx, value);
                 }

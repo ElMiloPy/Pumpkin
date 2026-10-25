@@ -881,9 +881,9 @@ impl VillagerEntity {
 
         // Vanilla parity: check if villager should level up
         // Level XP thresholds: 1: 0, 2: 10, 3: 70, 4: 150, 5: 250
-        const XP_THRESHOLDS: [i32; 5] = [0, 10, 70, 150, 250];
         let current_level = villager_data.level.0;
-        if current_level >= 1 && current_level < 5 {
+        if (1..5).contains(&current_level) {
+            const XP_THRESHOLDS: [i32; 5] = [0, 10, 70, 150, 250];
             let needed_xp = XP_THRESHOLDS[current_level as usize];
             if current_xp >= needed_xp {
                 villager_data.level.0 += 1;
@@ -953,13 +953,12 @@ impl VillagerEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
-        if let Ok(mut screen) = screen_arc.try_lock() {
-            if screen.sync_id() == sync_id {
-                if let Some(handler) = screen.as_any_mut().downcast_mut::<MerchantScreenHandler>() {
-                    handler.offers.clone_from(&offers);
-                    handler.update_result_slot();
-                }
-            }
+        if let Ok(mut screen) = screen_arc.try_lock()
+            && screen.sync_id() == sync_id
+            && let Some(handler) = screen.as_any_mut().downcast_mut::<MerchantScreenHandler>()
+        {
+            handler.offers.clone_from(&offers);
+            handler.update_result_slot();
         }
         self.send_trade_offers(player, sync_id, &offers, villager_data);
     }

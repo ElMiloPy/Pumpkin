@@ -166,6 +166,11 @@ pub trait BlockEntity: Any + Send + Sync {
     fn to_experience_container(self: Arc<Self>) -> Option<Arc<dyn ExperienceContainer>> {
         None
     }
+    fn to_recipe_input_inventory(
+        self: Arc<Self>,
+    ) -> Option<Arc<dyn pumpkin_inventory::crafting::recipes::RecipeInputInventory>> {
+        None
+    }
 }
 
 #[must_use]

@@ -3,7 +3,9 @@ use crate::world::World;
 use pumpkin_data::block_properties::CrafterLikeProperties;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::crafting::recipes::RecipeInputInventory;
-use pumpkin_inventory::{Clearable, Inventory, sync_read_items_from_nbt, sync_write_items_to_nbt};
+use pumpkin_inventory::{
+    Clearable, Inventory, PropertyDelegate, sync_read_items_from_nbt, sync_write_items_to_nbt,
+};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::position::BlockPos;
@@ -169,6 +171,42 @@ impl BlockEntity for CrafterBlockEntity {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn to_property_delegate(self: Arc<Self>) -> Option<Arc<dyn PropertyDelegate>> {
+        Some(self)
+    }
+
+    fn to_recipe_input_inventory(
+        self: Arc<Self>,
+    ) -> Option<Arc<dyn pumpkin_inventory::crafting::recipes::RecipeInputInventory>> {
+        Some(self)
+    }
+}
+
+impl PropertyDelegate for CrafterBlockEntity {
+    fn get_property(&self, index: i32) -> i32 {
+        match index {
+            0..=8 => i32::from(self.is_slot_disabled(index as usize)),
+            9 => i32::from(self.is_triggered()),
+            _ => 0,
+        }
+    }
+
+    fn set_property(&self, index: i32, value: i32) {
+        match index {
+            0..=8 => {
+                self.set_slot_state(index as usize, value == 0);
+            }
+            9 => {
+                self.set_triggered(value != 0);
+            }
+            _ => {}
+        }
+    }
+
+    fn get_properties_size(&self) -> i32 {
+        10
+    }
 }
 
 impl CrafterBlockEntity {
@@ -200,7 +238,7 @@ impl CrafterBlockEntity {
     }
 
     pub fn set_slot_state(&self, slot: usize, enabled: bool) {
-        if self.slot_can_be_disabled(slot) {
+        if slot < Self::INVENTORY_SIZE && (enabled || self.slot_can_be_disabled(slot)) {
             let mut disabled = self
                 .disabled_slots
                 .write()
@@ -251,6 +289,35 @@ impl CrafterBlockEntity {
             }
         }
         count
+    }
+
+    #[must_use]
+    pub fn smaller_stack_exist(
+        &self,
+        base_size: u8,
+        base_item: &ItemStack,
+        base_slot: usize,
+    ) -> bool {
+        let items = self
+            .items
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let disabled = self
+            .disabled_slots
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for i in (base_slot + 1)..Self::INVENTORY_SIZE {
+            if !disabled[i] {
+                let slot_stack = &items[i];
+                if slot_stack.is_empty()
+                    || (slot_stack.item_count < base_size
+                        && slot_stack.are_items_and_components_equal(base_item))
+                {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
@@ -322,7 +389,23 @@ impl Inventory for CrafterBlockEntity {
     }
 
     fn is_valid_slot_for(&self, slot: usize, _stack: &ItemStack) -> bool {
-        !self.is_slot_disabled(slot)
+        if self.is_slot_disabled(slot) {
+            return false;
+        }
+        let items = self
+            .items
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let slot_stack = &items[slot];
+        let current_count = slot_stack.item_count;
+        if current_count >= slot_stack.get_max_stack_size() {
+            return false;
+        }
+        if slot_stack.is_empty() {
+            true
+        } else {
+            !self.smaller_stack_exist(current_count, slot_stack, slot)
+        }
     }
 
     fn mark_dirty(&self) {

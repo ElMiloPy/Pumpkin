@@ -5937,6 +5937,7 @@ impl Player {
                 WindowType::Grindstone => 26,
                 WindowType::Loom => 24,
                 WindowType::Smithing => 34,
+                WindowType::Crafter3x3 => 62,
                 _ => 0,
             };
 
@@ -6011,6 +6012,7 @@ impl Player {
             WindowType::Grindstone => 26,
             WindowType::Loom => 24,
             WindowType::Smithing => 34,
+            WindowType::Crafter3x3 => 62,
             _ => 0,
         };
 

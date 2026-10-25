@@ -663,11 +663,11 @@ impl MobEntity {
                 *target_guard = None;
                 return None;
             }
-            if let Some(player) = target.get_player() {
-                if player.is_creative() || player.is_spectator() {
-                    *target_guard = None;
-                    return None;
-                }
+            if let Some(player) = target.get_player()
+                && (player.is_creative() || player.is_spectator())
+            {
+                *target_guard = None;
+                return None;
             }
             Some(target.clone())
         } else {

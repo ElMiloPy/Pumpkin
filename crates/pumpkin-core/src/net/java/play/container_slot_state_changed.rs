@@ -8,10 +8,29 @@ impl JavaClient {
         player: &Player,
         packet: &SContainerSlotStateChanged,
     ) {
-        debug!(
-            "Player {} container {} slot {} state changed to {}",
-            player.gameprofile.name, packet.container_id.0, packet.slot_id.0, packet.new_state
-        );
-        let _ = player;
+        if player.is_spectator() {
+            return;
+        }
+
+        let screen_handler_arc = player
+            .current_screen_handler
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let mut screen_handler = screen_handler_arc
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        if packet.container_id.0 as u8 != screen_handler.sync_id() {
+            return;
+        }
+
+        if let Some(crafter) = screen_handler
+            .as_any_mut()
+            .downcast_mut::<pumpkin_inventory::crafter_screen_handler::CrafterScreenHandler>(
+        ) && (0..9).contains(&packet.slot_id.0)
+        {
+            crafter.set_slot_state(packet.slot_id.0 as usize, packet.new_state);
+        }
     }
 }

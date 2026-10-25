@@ -173,11 +173,10 @@ impl dyn EntityBase + '_ {
 
 pub trait EntityBase: Send + Sync + std::any::Any {
     fn is_alive(&self) -> bool {
-        if let Some(living) = self.get_living_entity() {
-            living.is_alive()
-        } else {
-            self.get_entity().is_alive()
-        }
+        self.get_living_entity().map_or_else(
+            || self.get_entity().is_alive(),
+            living::LivingEntity::is_alive,
+        )
     }
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {

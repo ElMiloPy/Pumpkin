@@ -22,8 +22,10 @@ use pumpkin_data::translation;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockDirection, BlockStateId, FacingExt};
 use pumpkin_inventory::Inventory;
+use pumpkin_inventory::PropertyDelegate;
+use pumpkin_inventory::crafter_screen_handler::CrafterScreenHandler;
 use pumpkin_inventory::crafting::crafting_screen_handler::match_crafting_recipe;
-use pumpkin_inventory::generic_container_screen_handler::create_crafter_3x3;
+use pumpkin_inventory::crafting::recipes::RecipeInputInventory;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
@@ -35,7 +37,11 @@ use pumpkin_util::text::TextComponent;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
 
-struct CrafterScreenFactory(Arc<dyn Inventory>);
+struct CrafterScreenFactory {
+    inventory: Arc<dyn Inventory>,
+    property_delegate: Arc<dyn PropertyDelegate>,
+    recipe_input: Arc<dyn RecipeInputInventory>,
+}
 
 impl ScreenHandlerFactory for CrafterScreenFactory {
     fn create_screen_handler(
@@ -44,7 +50,14 @@ impl ScreenHandlerFactory for CrafterScreenFactory {
         player_inventory: &Arc<PlayerInventory>,
         player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
-        let handler = create_crafter_3x3(sync_id, player_inventory, self.0.clone(), player);
+        let handler = CrafterScreenHandler::new(
+            sync_id,
+            player_inventory,
+            &self.inventory,
+            &self.property_delegate,
+            self.recipe_input.clone(),
+            player.is_spectator(),
+        );
         let screen_handler_arc = Arc::new(Mutex::new(handler));
 
         Some(screen_handler_arc as SharedScreenHandler)
@@ -256,8 +269,14 @@ impl BlockBehaviour for CrafterBlock {
         args: GetScreenHandlerFactoryArgs<'_>,
     ) -> Option<Box<dyn ScreenHandlerFactory>> {
         let block_entity = args.world.get_block_entity(args.position)?;
-        let inventory = block_entity.get_inventory()?;
-        Some(Box::new(CrafterScreenFactory(inventory)))
+        let inventory = block_entity.clone().get_inventory()?;
+        let property_delegate = block_entity.clone().to_property_delegate()?;
+        let recipe_input = block_entity.to_recipe_input_inventory()?;
+        Some(Box::new(CrafterScreenFactory {
+            inventory,
+            property_delegate,
+            recipe_input,
+        }))
     }
 
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {

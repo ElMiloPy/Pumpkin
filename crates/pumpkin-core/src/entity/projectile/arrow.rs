@@ -1086,7 +1086,11 @@ impl ArrowEntity {
         }
 
         // Skip spectator and creative players
-        if other.is_spectator() || other.get_player().is_some_and(|p| p.is_creative()) {
+        if other.is_spectator()
+            || other
+                .get_player()
+                .is_some_and(super::super::player::Player::is_creative)
+        {
             return true;
         }
 
