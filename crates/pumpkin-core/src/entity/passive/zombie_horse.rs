@@ -48,9 +48,15 @@ impl ZombieHorseEntity {
             + rng.random::<f64>() * (1.0 / 15.0)
             + rng.random::<f64>() * (1.0 / 15.0);
         let speed = (9.0 + rng.random::<f64>() + rng.random::<f64>() + rng.random::<f64>()) / 42.16;
-        mob_entity.living_entity.set_attribute_base(&Attributes::JUMP_STRENGTH, jump_strength);
-        mob_entity.living_entity.set_attribute_base(&Attributes::MOVEMENT_SPEED, speed);
-        mob_entity.living_entity.set_attribute_base(&Attributes::MAX_HEALTH, 15.0);
+        mob_entity
+            .living_entity
+            .set_attribute_base(&Attributes::JUMP_STRENGTH, jump_strength);
+        mob_entity
+            .living_entity
+            .set_attribute_base(&Attributes::MOVEMENT_SPEED, speed);
+        mob_entity
+            .living_entity
+            .set_attribute_base(&Attributes::MAX_HEALTH, 15.0);
         mob_entity.living_entity.health.store(15.0);
 
         let horse = Self {
@@ -188,7 +194,10 @@ impl Mob for ZombieHorseEntity {
         }
 
         let living = &self.mob_entity.living_entity;
-        if let Some(attrs) = nbt.get_list("attributes").or_else(|| nbt.get_list("Attributes")) {
+        if let Some(attrs) = nbt
+            .get_list("attributes")
+            .or_else(|| nbt.get_list("Attributes"))
+        {
             for tag in attrs {
                 if let pumpkin_nbt::tag::NbtTag::Compound(comp) = tag {
                     let id = comp
@@ -204,8 +213,7 @@ impl Mob for ZombieHorseEntity {
                             living.set_attribute_base(&Attributes::MAX_HEALTH, base);
                         } else if id == "minecraft:jump_strength" || id == "horse.jump_strength" {
                             living.set_attribute_base(&Attributes::JUMP_STRENGTH, base);
-                        } else if id == "minecraft:movement_speed"
-                            || id == "generic.movement_speed"
+                        } else if id == "minecraft:movement_speed" || id == "generic.movement_speed"
                         {
                             living.set_attribute_base(&Attributes::MOVEMENT_SPEED, base);
                         }

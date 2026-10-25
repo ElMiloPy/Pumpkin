@@ -43,9 +43,14 @@ impl SkeletonHorseEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
         let mut rng = rand::rng();
-        let jump_strength = 0.4 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2;
-        mob_entity.living_entity.set_attribute_base(&Attributes::JUMP_STRENGTH, jump_strength);
-        mob_entity.living_entity.set_attribute_base(&Attributes::MAX_HEALTH, 15.0);
+        let jump_strength =
+            0.4 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2;
+        mob_entity
+            .living_entity
+            .set_attribute_base(&Attributes::JUMP_STRENGTH, jump_strength);
+        mob_entity
+            .living_entity
+            .set_attribute_base(&Attributes::MAX_HEALTH, 15.0);
         mob_entity.living_entity.health.store(15.0);
 
         let horse = Self {
@@ -173,7 +178,10 @@ impl Mob for SkeletonHorseEntity {
         }
 
         let living = &self.mob_entity.living_entity;
-        if let Some(attrs) = nbt.get_list("attributes").or_else(|| nbt.get_list("Attributes")) {
+        if let Some(attrs) = nbt
+            .get_list("attributes")
+            .or_else(|| nbt.get_list("Attributes"))
+        {
             for tag in attrs {
                 if let pumpkin_nbt::tag::NbtTag::Compound(comp) = tag {
                     let id = comp

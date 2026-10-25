@@ -87,10 +87,7 @@ impl MinecartInventory {
             .is_some()
     }
 
-    pub fn unpack_loot(
-        self: &Arc<Self>,
-        params: &crate::world::loot::LootContextParameters<'_>,
-    ) {
+    pub fn unpack_loot(self: &Arc<Self>, params: &crate::world::loot::LootContextParameters<'_>) {
         let loot_table = self
             .loot_table
             .lock()

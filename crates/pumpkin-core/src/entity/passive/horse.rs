@@ -63,13 +63,24 @@ impl HorseEntity {
         // generateJumpStrength: 0.4 + rand*0.2 + rand*0.2 + rand*0.2 (0.4..=1.0)
         // generateSpeed: (0.45 + rand*0.3 + rand*0.3 + rand*0.3) * 0.25 (0.1125..=0.3375)
         let max_health = 15.0 + rng.random_range(0..8) as f32 + rng.random_range(0..9) as f32;
-        let jump_strength = 0.4 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2;
-        let speed = (0.45 + rng.random::<f64>() * 0.3 + rng.random::<f64>() * 0.3 + rng.random::<f64>() * 0.3) * 0.25;
+        let jump_strength =
+            0.4 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2 + rng.random::<f64>() * 0.2;
+        let speed = (0.45
+            + rng.random::<f64>() * 0.3
+            + rng.random::<f64>() * 0.3
+            + rng.random::<f64>() * 0.3)
+            * 0.25;
 
-        mob_entity.living_entity.set_attribute_base(&Attributes::MAX_HEALTH, f64::from(max_health));
+        mob_entity
+            .living_entity
+            .set_attribute_base(&Attributes::MAX_HEALTH, f64::from(max_health));
         mob_entity.living_entity.health.store(max_health);
-        mob_entity.living_entity.set_attribute_base(&Attributes::JUMP_STRENGTH, jump_strength);
-        mob_entity.living_entity.set_attribute_base(&Attributes::MOVEMENT_SPEED, speed);
+        mob_entity
+            .living_entity
+            .set_attribute_base(&Attributes::JUMP_STRENGTH, jump_strength);
+        mob_entity
+            .living_entity
+            .set_attribute_base(&Attributes::MOVEMENT_SPEED, speed);
 
         let horse = Self {
             mob_entity,
@@ -199,12 +210,7 @@ impl Animal for HorseEntity {
             30.0,
             f64::from(rng.random_range(0..16)) / 15.0,
         ) as f32;
-        let child_jump = blend_attr(
-            &Attributes::JUMP_STRENGTH,
-            0.4,
-            1.0,
-            rng.random::<f64>(),
-        );
+        let child_jump = blend_attr(&Attributes::JUMP_STRENGTH, 0.4, 1.0, rng.random::<f64>());
         let child_speed = blend_attr(
             &Attributes::MOVEMENT_SPEED,
             0.1125,
@@ -299,7 +305,10 @@ impl Mob for HorseEntity {
         }
 
         let living = &self.mob_entity.living_entity;
-        if let Some(attrs) = nbt.get_list("attributes").or_else(|| nbt.get_list("Attributes")) {
+        if let Some(attrs) = nbt
+            .get_list("attributes")
+            .or_else(|| nbt.get_list("Attributes"))
+        {
             for tag in attrs {
                 if let pumpkin_nbt::tag::NbtTag::Compound(comp) = tag {
                     let id = comp
@@ -315,8 +324,7 @@ impl Mob for HorseEntity {
                             living.set_attribute_base(&Attributes::MAX_HEALTH, base);
                         } else if id == "minecraft:jump_strength" || id == "horse.jump_strength" {
                             living.set_attribute_base(&Attributes::JUMP_STRENGTH, base);
-                        } else if id == "minecraft:movement_speed"
-                            || id == "generic.movement_speed"
+                        } else if id == "minecraft:movement_speed" || id == "generic.movement_speed"
                         {
                             living.set_attribute_base(&Attributes::MOVEMENT_SPEED, base);
                         }

@@ -54,10 +54,16 @@ impl MuleEntity {
         let mob_entity = MobEntity::new(entity);
         let mut rng = rand::rng();
         let max_health = 15.0 + rng.random_range(0..8) as f32 + rng.random_range(0..9) as f32;
-        mob_entity.living_entity.set_attribute_base(&Attributes::MAX_HEALTH, f64::from(max_health));
+        mob_entity
+            .living_entity
+            .set_attribute_base(&Attributes::MAX_HEALTH, f64::from(max_health));
         mob_entity.living_entity.health.store(max_health);
-        mob_entity.living_entity.set_attribute_base(&Attributes::JUMP_STRENGTH, 0.5);
-        mob_entity.living_entity.set_attribute_base(&Attributes::MOVEMENT_SPEED, 0.175);
+        mob_entity
+            .living_entity
+            .set_attribute_base(&Attributes::JUMP_STRENGTH, 0.5);
+        mob_entity
+            .living_entity
+            .set_attribute_base(&Attributes::MOVEMENT_SPEED, 0.175);
 
         let mule = Self {
             mob_entity,
@@ -203,7 +209,10 @@ impl Mob for MuleEntity {
         }
 
         let living = &self.mob_entity.living_entity;
-        if let Some(attrs) = nbt.get_list("attributes").or_else(|| nbt.get_list("Attributes")) {
+        if let Some(attrs) = nbt
+            .get_list("attributes")
+            .or_else(|| nbt.get_list("Attributes"))
+        {
             for tag in attrs {
                 if let pumpkin_nbt::tag::NbtTag::Compound(comp) = tag {
                     let id = comp

@@ -145,17 +145,15 @@ impl EntityBase for BoatEntity {
     fn interact(&self, player: &Arc<Player>, _item_stack: &mut ItemStack) -> bool {
         let is_chest = self.inventory.is_some();
 
-        if is_chest && player.get_entity().is_sneaking()
+        if is_chest
+            && player.get_entity().is_sneaking()
             && let Some(inv) = &self.inventory
         {
             return crate::entity::vehicle::minecart::container::open(
                 &self.vehicle.entity,
                 player,
                 inv,
-                TextComponent::translate(
-                    pumpkin_data::translation::java::CONTAINER_CHEST,
-                    [],
-                ),
+                TextComponent::translate(pumpkin_data::translation::java::CONTAINER_CHEST, []),
                 false,
             );
         }
@@ -183,10 +181,7 @@ impl EntityBase for BoatEntity {
                     &self.vehicle.entity,
                     player,
                     inv,
-                    TextComponent::translate(
-                        pumpkin_data::translation::java::CONTAINER_CHEST,
-                        [],
-                    ),
+                    TextComponent::translate(pumpkin_data::translation::java::CONTAINER_CHEST, []),
                     false,
                 );
             }
